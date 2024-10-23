@@ -91,8 +91,14 @@ def process_audio(file_path, operations=None, preserve_characteristics=True):
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     operations_str = "_".join([f"{op['type']}{op['value']}" for op in operations]) if operations else "no_ops"
     
-    output_wav_file = os.path.join(processed_dir, f'processed_{operations_str}_{base_name}.wav')
-    output_mp3_file = os.path.join(processed_dir, f'processed_{operations_str}_{base_name}.mp3')
+    if "processed_" in base_name:
+        base_name = base_name.split("_")
+        output_name = f'{base_name[0]}_{operations_str}_{("_").join(base_name[2:])}'
+        output_wav_file = os.path.join(processed_dir, output_name + ".wav")
+        output_mp3_file = os.path.join(processed_dir, output_name + ".mp3")
+    else:
+        output_wav_file = os.path.join(processed_dir, f'processed_{operations_str}_{base_name}.wav')
+        output_mp3_file = os.path.join(processed_dir, f'processed_{operations_str}_{base_name}.mp3')
 
     # Save WAV file
     sf.write(output_wav_file, y, sr)
