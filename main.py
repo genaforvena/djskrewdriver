@@ -89,12 +89,10 @@ def process_audio(file_path, operations=None, preserve_characteristics=True):
 
     # Change the output file path to save in the processed folder with date
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    if 'processed_' in base_name:
-        output_wav_file = os.path.join(processed_dir, f'{base_name}_{date_str}.wav')
-        output_mp3_file = os.path.join(processed_dir, f'{base_name}_{date_str}.mp3')
-    else:    
-        output_wav_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.wav')
-        output_mp3_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.mp3')
+    operations_str = "_".join([f"{op['type']}{op['value']}" for op in operations]) if operations else "no_ops"
+    
+    output_wav_file = os.path.join(processed_dir, f'processed_{operations_str}_{date_str}_{base_name}.wav')
+    output_mp3_file = os.path.join(processed_dir, f'processed_{operations_str}_{date_str}_{base_name}.mp3')
 
     # Save WAV file
     sf.write(output_wav_file, y, sr)
