@@ -3,6 +3,7 @@ import soundfile as sf
 import numpy as np
 import re
 import os
+import sys
 from yt_downloader import download_video  
 
 def change_speed(y, sr, speed_factor, preserve_pitch=True):
@@ -11,21 +12,36 @@ def change_speed(y, sr, speed_factor, preserve_pitch=True):
     else:
         return librosa.resample(y, orig_sr=sr, target_sr=int(sr * speed_factor))  # Use keyword arguments
 
-def process_audio(file_path, operations):
+def process_audio(file_path, operations=None):
     y, sr = librosa.load(file_path)
     
-    for op in operations:
-        speed_factor = 1 + op['change'] / 100
-        y = change_speed(y, sr, speed_factor, op['preserve_pitch'])
+    if operations:
+        for op in operations:
+            speed_factor = 1 + op['change'] / 100
+            y = change_speed(y, sr, speed_factor, op['preserve_pitch'])
     
     # Create the processed directory if it doesn't exist
     processed_dir = 'processed'
     os.makedirs(processed_dir, exist_ok=True)
 
-    # Change the output file path to save in the processed folder
-    output_file = os.path.join(processed_dir, 'processed_' + os.path.splitext(os.path.basename(file_path))[0] + '.wav')
-    sf.write(output_file, y, sr)
-    print(f"Processed audio saved as {output_file}")
+    # Get the current date for filename
+    from datetime import datetime
+    date_str = datetime.now().strftime("%Y%m%d%H%M%S")
+
+    # Change the output file path to save in the processed folder with date
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    output_wav_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.wav')
+    output_mp3_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.mp3')
+    
+    # Save WAV file
+    sf.write(output_wav_file, y, sr)
+    print(f"Processed audio (WAV) saved as {output_wav_file}")
+    
+    # Convert and save MP3 file
+    from pydub import AudioSegment
+    sound = AudioSegment.from_wav(output_wav_file)
+    sound.export(output_mp3_file, format="mp3")
+    print(f"Processed audio (MP3) saved as {output_mp3_file}")
 
 def parse_instructions(instructions):
     operations = []
@@ -43,22 +59,36 @@ def parse_instructions(instructions):
     return operations
 
 if __name__ == "__main__":
-    file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
-    
-    if not file_path: 
-        url = input("Enter the YouTube video URL: ")
-        output_path = "."  
-        mp3_file = download_video(url, output_path)  
-        print(f"Downloaded MP3 file: {mp3_file}")
-        file_path = mp3_file 
+    if len(sys.argv) > 1:
+        arg = sys.argv[1]
+        if arg.startswith('https'):
+            url = arg
+            output_path = "."  
+            mp3_file = download_video(url, output_path)  
+            print(f"Downloaded MP3 file: {mp3_file}")
+            file_path = mp3_file 
+        else:
+            file_path = arg
+    else:
+        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
+        if not file_path: 
+            url = input("Enter the YouTube video URL: ")
+            output_path = "."  
+            mp3_file = download_video(url, output_path)  
+            print(f"Downloaded MP3 file: {mp3_file}")
+            file_path = mp3_file 
 
-    print("Enter your instructions using the following syntax:")
-    print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
-    print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
-    print("Example: SLOW:10:PITCH;SPEED:20:NOPITCH;")
-    instructions = input("Instructions: ")
-    operations = parse_instructions(instructions)
+    if len(sys.argv) > 2:
+        instructions = sys.argv[2]
+    else:
+        print("Enter your instructions using the following syntax:")
+        print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
+        print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
+        print("Example: SLOW:10:PITCH;SPEED:20:NOPITCH;")
+        instructions = input("Instructions (optional): ")
+    operations = parse_instructions(instructions) if instructions else None
     if operations:
         process_audio(file_path, operations)
     else:
+        process_audio(file_path)
         print("No valid instructions found. Please check your input.")
