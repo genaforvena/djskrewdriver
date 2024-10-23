@@ -43,6 +43,8 @@ def process_audio(file_path, operations=None):
     sound.export(output_mp3_file, format="mp3")
     print(f"Processed audio (MP3) saved as {output_mp3_file}")
 
+    return output_wav_file
+
 def parse_instructions(instructions):
     operations = []
     pattern = r"(SPEED|SLOW):(\d+):(PITCH|NOPITCH);"
@@ -78,10 +80,10 @@ if __name__ == "__main__":
             print(f"Downloaded MP3 file: {mp3_file}")
             file_path = mp3_file 
 
-    if len(sys.argv) > 2:
-        instructions = sys.argv[2]
-    else:
-        while True:
+    while True:
+        if len(sys.argv) > 2:
+            instructions = sys.argv[2]
+        else:
             print("Enter your instructions using the following syntax:")
             print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
             print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
@@ -90,8 +92,11 @@ if __name__ == "__main__":
             if not instructions:
                 process_audio(file_path)
                 print("No instructions provided. Audio processed without modifications.")
-            operations = parse_instructions(instructions)
-            if operations:
-                process_audio(file_path, operations)
-            else:
-                print("No valid instructions found. Please check your input.")
+                break  # Exit the loop if no instructions are provided
+        operations = parse_instructions(instructions)
+        if operations:
+            file_path = process_audio(file_path, operations)
+            print("Audio processed with modifications.")
+        else:
+            print("No valid instructions found. Please check your input.")
+            break  # Exit the loop if no valid instructions are found
