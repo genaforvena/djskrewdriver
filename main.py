@@ -14,12 +14,12 @@ def change_speed(y, sr, speed_factor, preserve_pitch=True):
 
 def process_audio(file_path, operations=None):
     y, sr = librosa.load(file_path)
-    
+
     if operations:
         for op in operations:
             speed_factor = 1 + op['change'] / 100
             y = change_speed(y, sr, speed_factor, op['preserve_pitch'])
-    
+
     # Create the processed directory if it doesn't exist
     processed_dir = 'processed'
     os.makedirs(processed_dir, exist_ok=True)
@@ -30,13 +30,17 @@ def process_audio(file_path, operations=None):
 
     # Change the output file path to save in the processed folder with date
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    output_wav_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.wav')
-    output_mp3_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.mp3')
-    
+    if 'processed_' in base_name:
+        output_wav_file = os.path.join(processed_dir, f'{base_name}_{date_str}.wav')
+        output_mp3_file = os.path.join(processed_dir, f'{base_name}_{date_str}.mp3')
+    else:    
+        output_wav_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.wav')
+        output_mp3_file = os.path.join(processed_dir, f'processed_{date_str}_{base_name}.mp3')
+
     # Save WAV file
     sf.write(output_wav_file, y, sr)
     print(f"Processed audio (WAV) saved as {output_wav_file}")
-    
+
     # Convert and save MP3 file
     from pydub import AudioSegment
     sound = AudioSegment.from_wav(output_wav_file)
@@ -49,7 +53,7 @@ def parse_instructions(instructions):
     operations = []
     pattern = r"(SPEED|SLOW):(\d+):(PITCH|NOPITCH);"
     matches = re.finditer(pattern, instructions)
-    
+
     for match in matches:
         action, percentage, pitch_option = match.groups()
         change = int(percentage)
@@ -57,7 +61,7 @@ def parse_instructions(instructions):
             change = -change
         preserve_pitch = (pitch_option == "PITCH")
         operations.append({'change': change, 'preserve_pitch': preserve_pitch})
-    
+
     return operations
 
 if __name__ == "__main__":
