@@ -81,14 +81,17 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         instructions = sys.argv[2]
     else:
-        print("Enter your instructions using the following syntax:")
-        print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
-        print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
-        print("Example: SLOW:10:PITCH;SPEED:20:NOPITCH;")
-        instructions = input("Instructions (optional): ")
-    operations = parse_instructions(instructions) if instructions else None
-    if operations:
-        process_audio(file_path, operations)
-    else:
-        process_audio(file_path)
-        print("No valid instructions found. Please check your input.")
+        while True:
+            print("Enter your instructions using the following syntax:")
+            print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
+            print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
+            print("Example: SLOW:10:PITCH;SPEED:20:NOPITCH;")
+            instructions = input("Instructions (optional): ")
+            if not instructions:
+                process_audio(file_path)
+                print("No instructions provided. Audio processed without modifications.")
+            operations = parse_instructions(instructions)
+            if operations:
+                process_audio(file_path, operations)
+            else:
+                print("No valid instructions found. Please check your input.")
