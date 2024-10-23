@@ -1,13 +1,14 @@
 # DJ Screwdriver 🎚️
 
-A Python-based audio manipulation tool that lets you experiment with track speeds using different algorithms. Perfect for creating remixes, vaporwave-style edits, or any creative audio experiments.
+A Python-based audio manipulation tool that lets you experiment with track speeds and pitches using different algorithms. Perfect for creating remixes, vaporwave-style edits, or any creative audio experiments.
 
 ## ✨ Features
 
 - Process local audio files or download directly from YouTube
-- Multiple speed manipulation algorithms:
-  - Preserve pitch while changing speed (like a DJ's tempo control)
-  - Classic speed change with pitch shift (think vaporwave-style effects)
+- Multiple audio manipulation algorithms:
+  - Pitch shifting (semitone-based adjustment)
+  - Time stretching (tempo changes while preserving pitch)
+  - Resampling (classic speed change affecting both time and pitch)
 - Chain multiple operations in sequence
 - Automatic output in both WAV and MP3 formats
 - Timestamped output files for easy organization
@@ -34,27 +35,29 @@ Run the script in any of these ways:
 python main.py
 
 # Direct file processing
-python main.py path/to/your/audio.mp3 "SLOW:10:PITCH;SPEED:20:NOPITCH;"
+python main.py path/to/your/audio.mp3 "p:2;t:-10;r:5;"
 
 # YouTube processing
-python main.py https://youtube.com/watch?v=... "SLOW:10:PITCH;"
+python main.py https://youtube.com/watch?v=... "p:-2;t:15;"
 ```
 
 ### 🎮 Command Syntax
 
-Structure your speed instructions using this syntax:
-- `SPEED:X:PITCH;` - Speed up by X% while preserving pitch
-- `SPEED:X:NOPITCH;` - Speed up by X% with pitch shift
-- `SLOW:X:PITCH;` - Slow down by X% while preserving pitch
-- `SLOW:X:NOPITCH;` - Slow down by X% with pitch shift
+Structure your audio manipulation instructions using this syntax:
+- `p:X;` - Shift pitch by X semitones (positive = higher, negative = lower)
+- `t:X;` - Time stretch by X percent (positive = faster, negative = slower)
+- `r:X;` - Resample by X percent (positive = faster, negative = slower)
+
+Commands can be chained together and will be applied in sequence.
 
 Example:
 ```bash
-SLOW:10:PITCH;SPEED:20:NOPITCH;
+p:2;t:-10;r:5;
 ```
 This will:
-1. Slow down the track by 10% (keeping original pitch)
-2. Then speed it up by 20% (with pitch shift)
+1. Shift pitch up by 2 semitones
+2. Slow down by 10% (preserving the new pitch)
+3. Speed up by 5% using resampling (affects both time and pitch)
 
 ### 📂 Output
 
@@ -71,20 +74,43 @@ Processed files are saved in a `processed` directory with timestamps:
 
 ## 🎵 Examples
 
-1. Create a slowed + reverb style edit:
+1. Create a classic vaporwave effect (pitched down, slowed):
    ```bash
-   python main.py song.mp3 "SLOW:15:NOPITCH;"
+   python main.py song.mp3 "p:-2;t:-15;"
    ```
 
-2. Speed up for chipmunk effect:
+2. Create a nightcore-style edit (faster with higher pitch):
    ```bash
-   python main.py song.mp3 "SPEED:30:NOPITCH;"
+   python main.py song.mp3 "r:30;"
    ```
 
 3. Complex sequence:
    ```bash
-   python main.py song.mp3 "SLOW:20:PITCH;SPEED:10:NOPITCH;SLOW:5:PITCH;"
+   python main.py song.mp3 "p:1;t:-10;r:5;p:-0.5;"
    ```
+
+4. Download and process YouTube video:
+   ```bash
+   python main.py https://youtube.com/watch?v=... "p:-3;t:-20;"
+   ```
+
+## 🎯 Command Effects Guide
+
+- **Pitch Shift (`p`)**: Adjusts the pitch without changing tempo. Each semitone represents a half-step in musical terms:
+  - `p:12;` = Up one octave
+  - `p:-12;` = Down one octave
+  - `p:1;` = Up one semitone
+  - `p:-1;` = Down one semitone
+
+- **Time Stretch (`t`)**: Changes speed while preserving pitch:
+  - `t:50;` = 50% faster
+  - `t:-50;` = 50% slower
+  - `t:100;` = Double speed
+  - `t:-25;` = 25% slower
+
+- **Resample (`r`)**: Classic speed change affecting both time and pitch:
+  - `r:50;` = 50% faster (higher pitch)
+  - `r:-50;` = 50% slower (lower pitch)
 
 ## 🤝 Contributing
 

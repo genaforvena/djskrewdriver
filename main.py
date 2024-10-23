@@ -6,19 +6,32 @@ import os
 import sys
 from yt_downloader import download_video  
 
-def change_speed(y, sr, speed_factor, preserve_pitch=True):
-    if preserve_pitch:
-        return librosa.effects.time_stretch(y, rate=speed_factor)
-    else:
-        return librosa.resample(y, orig_sr=sr, target_sr=int(sr * speed_factor))  # Use keyword arguments
+def pitch_shift(y, sr, n_steps):
+    """Shift the pitch by n semitones"""
+    return librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+
+def time_stretch(y, rate):
+    """Time stretch without affecting pitch"""
+    return librosa.effects.time_stretch(y, rate=rate)
+
+def resample(y, orig_sr, target_sr):
+    """Resample the audio to change both time and pitch"""
+    return librosa.resample(y, orig_sr=orig_sr, target_sr=target_sr)
 
 def process_audio(file_path, operations=None):
     y, sr = librosa.load(file_path)
 
     if operations:
         for op in operations:
-            speed_factor = 1 + op['change'] / 100
-            y = change_speed(y, sr, speed_factor, op['preserve_pitch'])
+            if op['type'] == 'p':  # pitch shift
+                y = pitch_shift(y, sr, op['value'])
+            elif op['type'] == 't':  # time stretch
+                rate = 1 + op['value'] / 100
+                y = time_stretch(y, rate)
+            elif op['type'] == 'r':  # resample
+                target_sr = int(sr * (1 + op['value'] / 100))
+                y = resample(y, sr, target_sr)
+                y = librosa.resample(y, orig_sr=target_sr, target_sr=sr)  # Resample back to original sr
 
     # Create the processed directory if it doesn't exist
     processed_dir = 'processed'
@@ -51,16 +64,14 @@ def process_audio(file_path, operations=None):
 
 def parse_instructions(instructions):
     operations = []
-    pattern = r"(SPEED|SLOW):(\d+):(PITCH|NOPITCH);"
+    # New pattern for p (pitch), t (time), and r (resample) commands
+    pattern = r"([ptr]):(-?\d+(?:\.\d+)?);?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        action, percentage, pitch_option = match.groups()
-        change = int(percentage)
-        if action == "SLOW":
-            change = -change
-        preserve_pitch = (pitch_option == "PITCH")
-        operations.append({'change': change, 'preserve_pitch': preserve_pitch})
+        cmd_type, value = match.groups()
+        value = float(value)
+        operations.append({'type': cmd_type, 'value': value})
 
     return operations
 
@@ -88,19 +99,25 @@ if __name__ == "__main__":
         if len(sys.argv) > 2:
             instructions = sys.argv[2]
         else:
-            print("Enter your instructions using the following syntax:")
-            print("SPEED:<percentage>:PITCH; or SPEED:<percentage>:NOPITCH; to speed up")
-            print("SLOW:<percentage>:PITCH; or SLOW:<percentage>:NOPITCH; to slow down")
-            print("Example: SLOW:10:PITCH;SPEED:20:NOPITCH;")
-            instructions = input("Instructions (optional): ")
+            print("\nEnter your instructions using the following syntax:")
+            print("p:<semitones>; for pitch shift (positive or negative number)")
+            print("t:<percentage>; for time stretch (positive to speed up, negative to slow down)")
+            print("r:<percentage>; for resampling (positive to speed up, negative to slow down)")
+            print("Example: p:2;t:-10;r:5;")
+            print("This will:")
+            print("- Shift pitch up by 2 semitones")
+            print("- Slow down by 10%")
+            print("- Speed up by 5% using resampling")
+            instructions = input("\nInstructions (optional): ")
             if not instructions:
                 process_audio(file_path)
                 print("No instructions provided. Audio processed without modifications.")
-                break  # Exit the loop if no instructions are provided
+                break
+
         operations = parse_instructions(instructions)
         if operations:
             file_path = process_audio(file_path, operations)
             print("Audio processed with modifications.")
         else:
             print("No valid instructions found. Please check your input.")
-            break  # Exit the loop if no valid instructions are found
+            break
