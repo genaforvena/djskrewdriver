@@ -11,11 +11,11 @@ def pitch_shift(y, sr, n_steps):
     return librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
 
 def time_stretch(y, rate):
-    """Time stretch without affecting pitch"""
+    """Time stretch by rate (1.0 = original speed, 2.0 = twice as fast, 0.5 = half speed)"""
     return librosa.effects.time_stretch(y, rate=rate)
 
 def resample(y, orig_sr, target_sr):
-    """Resample the audio to change both time and pitch"""
+    """Resample the audio (target_sr/orig_sr determines speed change)"""
     return librosa.resample(y, orig_sr=orig_sr, target_sr=target_sr)
 
 def process_audio(file_path, operations=None):
@@ -26,12 +26,11 @@ def process_audio(file_path, operations=None):
             if op['type'] == 'p':  # pitch shift
                 y = pitch_shift(y, sr, op['value'])
             elif op['type'] == 't':  # time stretch
-                rate = 1 + op['value'] / 100
-                y = time_stretch(y, rate)
+                y = time_stretch(y, op['value'])
             elif op['type'] == 'r':  # resample
-                target_sr = int(sr * (1 + op['value'] / 100))
+                target_sr = int(sr * op['value'])
                 y = resample(y, sr, target_sr)
-                y = librosa.resample(y, orig_sr=target_sr, target_sr=sr)  # Resample back to original sr
+                y = librosa.resample(y, orig_sr=target_sr, target_sr=sr)
 
     # Create the processed directory if it doesn't exist
     processed_dir = 'processed'
@@ -64,8 +63,8 @@ def process_audio(file_path, operations=None):
 
 def parse_instructions(instructions):
     operations = []
-    # New pattern for p (pitch), t (time), and r (resample) commands
-    pattern = r"([ptr]):(-?\d+(?:\.\d+)?);?"
+    # Pattern for floating point values
+    pattern = r"([ptr]):(-?\d*\.?\d+);?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -100,14 +99,14 @@ if __name__ == "__main__":
             instructions = sys.argv[2]
         else:
             print("\nEnter your instructions using the following syntax:")
-            print("p:<semitones>; for pitch shift (positive or negative number)")
-            print("t:<percentage>; for time stretch (positive to speed up, negative to slow down)")
-            print("r:<percentage>; for resampling (positive to speed up, negative to slow down)")
-            print("Example: p:2;t:-10;r:5;")
+            print("p:<semitones>; for pitch shift (any number of semitones)")
+            print("t:<rate>; for time stretch (1.0 = normal, 2.0 = double speed, 0.5 = half speed)")
+            print("r:<rate>; for resampling (1.0 = normal, 2.0 = double speed, 0.5 = half speed)")
+            print("Example: p:2;t:0.75;r:1.5;")
             print("This will:")
             print("- Shift pitch up by 2 semitones")
-            print("- Slow down by 10%")
-            print("- Speed up by 5% using resampling")
+            print("- Slow down to 75% speed")
+            print("- Speed up by 1.5x using resampling")
             instructions = input("\nInstructions (optional): ")
             if not instructions:
                 process_audio(file_path)
