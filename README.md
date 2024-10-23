@@ -7,7 +7,7 @@ A Python-based audio manipulation tool that lets you experiment with track speed
 - Process local audio files or download directly from YouTube
 - Multiple audio manipulation algorithms:
   - Pitch shifting (semitone-based adjustment using librosa.effects.pitch_shift)
-  - Time stretching (tempo changes while preserving pitch using librosa.effects.time_stretch)
+  - Time stretching (using either librosa.effects.time_stretch or resampling method)
   - Resampling (classic speed change using librosa.resample)
 - Chain multiple operations in sequence
 - Automatic output in both WAV and MP3 formats
@@ -35,29 +35,35 @@ Run the script in any of these ways:
 python main.py
 
 # Direct file processing
-python main.py path/to/your/audio.mp3 "p:2;t:0.75;r:1.5;"
+python main.py path/to/your/audio.mp3 "p:2;rt:0.75;r:1.5;"
 
 # YouTube processing
-python main.py https://youtube.com/watch?v=... "p:-2;t:0.8;"
+python main.py https://youtube.com/watch?v=... "p:-2;rt:0.8;"
 ```
 
 ### 🎮 Command Syntax
 
 Structure your audio manipulation instructions using this syntax:
 - `p:X;` - Shift pitch by X semitones (any positive or negative number)
-- `t:X;` - Time stretch with rate X (1.0 = original speed, 2.0 = double speed, 0.5 = half speed)
-- `r:X;` - Resample with rate X (1.0 = original speed, 2.0 = double speed, 0.5 = half speed)
+- `t:X;` - Time stretch with rate X using librosa.effects.time_stretch
+- `rt:X;` - Time stretch with rate X using resampling method
+- `r:X;` - Resample with rate X (affects both time and pitch)
+
+For all rate values:
+- 1.0 = original speed
+- 2.0 = double speed
+- 0.5 = half speed
 
 Commands can be chained together and will be applied in sequence.
 
 Example:
 ```bash
-p:2;t:0.75;r:1.5;
+p:2;rt:0.75;r:1.5;
 ```
 This will:
 1. Shift pitch up by 2 semitones
-2. Slow down to 75% speed (preserving the new pitch)
-3. Speed up by 1.5x using resampling (affects both time and pitch)
+2. Slow down to 75% speed using resampling method
+3. Speed up by 1.5x with pitch change
 
 ### 📂 Output
 
@@ -76,7 +82,7 @@ Processed files are saved in a `processed` directory with timestamps:
 
 1. Create a classic vaporwave effect (pitched down, slowed):
    ```bash
-   python main.py song.mp3 "p:-5;t:0.8;"
+   python main.py song.mp3 "p:-5;rt:0.8;"
    ```
 
 2. Create a nightcore-style edit (faster with higher pitch):
@@ -84,9 +90,10 @@ Processed files are saved in a `processed` directory with timestamps:
    python main.py song.mp3 "r:1.3;"
    ```
 
-3. Complex sequence:
+3. Compare time stretch methods:
    ```bash
-   python main.py song.mp3 "p:1;t:0.9;r:1.1;p:-0.5;"
+   python main.py song.mp3 "t:0.75;"  # librosa time_stretch
+   python main.py song.mp3 "rt:0.75;" # resampling method
    ```
 
 ## 🎯 Command Effects Guide
@@ -102,15 +109,20 @@ Processed files are saved in a `processed` directory with timestamps:
   - Values are rate multipliers where 1.0 is original speed
   - `t:2.0;` = Double speed
   - `t:0.5;` = Half speed
-  - `t:1.5;` = 50% faster
-  - `t:0.75;` = 25% slower
+  - Best for preserving audio quality during tempo changes
+
+- **Resampled Time Stretch (`rt`)**: Uses librosa.resample
+  - Values are rate multipliers where 1.0 is original speed
+  - `rt:2.0;` = Double speed
+  - `rt:0.5;` = Half speed
+  - May produce different artifacts compared to `t`
+  - Useful for creating specific audio effects
 
 - **Resample (`r`)**: Uses librosa.resample
   - Values are rate multipliers where 1.0 is original speed
   - `r:2.0;` = Double speed (up one octave)
   - `r:0.5;` = Half speed (down one octave)
-  - `r:1.5;` = 50% faster (up ~7 semitones)
-  - `r:0.75;` = 25% slower (down ~5 semitones)
+  - Changes both speed and pitch together
 
 ## 🤝 Contributing
 
