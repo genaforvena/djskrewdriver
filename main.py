@@ -5,8 +5,54 @@ import re
 import os
 import sys
 import sounddevice as sd
+import keyboard
 from yt_downloader import download_video
 from datetime import datetime
+from collections import deque
+
+class AudioHistory:
+    def __init__(self, max_size=50):
+        self.history = deque(maxlen=max_size)
+        self.current_index = -1
+        
+    def add(self, state, operations):
+        """Add a new state and its operations to history"""
+        # Remove any future states if we're not at the end
+        while len(self.history) > self.current_index + 1:
+            self.history.pop()
+            
+        self.history.append((state.copy(), operations))
+        self.current_index = len(self.history) - 1
+        
+    def can_undo(self):
+        return self.current_index > 0
+        
+    def can_redo(self):
+        return self.current_index < len(self.history) - 1
+        
+    def undo(self):
+        """Move back one state"""
+        if self.can_undo():
+            self.current_index -= 1
+            return self.history[self.current_index]
+        return None
+        
+    def redo(self):
+        """Move forward one state"""
+        if self.can_redo():
+            self.current_index += 1
+            return self.history[self.current_index]
+        return None
+        
+    def current(self):
+        """Get current state"""
+        if self.current_index >= 0:
+            return self.history[self.current_index]
+        return None
+    
+    def get_operations_history(self):
+        """Get list of all operations up to current point"""
+        return [ops for _, ops in list(self.history)[:self.current_index + 1]]
 
 class AudioProcessor:
     def __init__(self, file_path):
@@ -14,31 +60,81 @@ class AudioProcessor:
         self.y, self.sr = librosa.load(file_path)
         self.original_y = self.y.copy()
         self.current_y = self.y.copy()
+        self.history = AudioHistory()
+        # Add initial state to history
+        self.history.add(self.original_y, [])
         self.is_playing = False
         
     def reset_to_original(self):
         """Reset audio to original state"""
         self.current_y = self.original_y.copy()
+        self.history = AudioHistory()
+        self.history.add(self.original_y, [])
         print("Reset to original audio")
         return self.current_y
+
+    def navigate_history(self):
+        """Enter history navigation mode"""
+        print("\nHistory Navigation Mode")
+        print("Use Left/Right arrow keys to navigate")
+        print("Press 'Enter' to confirm or 'Esc' to cancel")
+        print("Press 'p' to preview current state")
+        
+        while True:
+            event = keyboard.read_event(suppress=True)
+            if event.event_type == 'down':
+                if event.name == 'left' and self.history.can_undo():
+                    state, ops = self.history.undo()
+                    self.current_y = state.copy()
+                    self.print_history_status()
+                    
+                elif event.name == 'right' and self.history.can_redo():
+                    state, ops = self.history.redo()
+                    self.current_y = state.copy()
+                    self.print_history_status()
+                    
+                elif event.name == 'p':
+                    self.play_audio()
+                    
+                elif event.name == 'enter':
+                    print("\nConfirmed current state")
+                    break
+                    
+                elif event.name == 'esc':
+                    # Restore last confirmed state
+                    state, ops = self.history.current()
+                    self.current_y = state.copy()
+                    print("\nCancelled navigation")
+                    break
+
+    def print_history_status(self):
+        """Print current position in history"""
+        current = self.history.current_index + 1
+        total = len(self.history.history)
+        ops = self.history.current()[1]
+        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
+        print(f"\nState {current}/{total}: {ops_str}")
+        
+        # Show navigation options
+        options = []
+        if self.history.can_undo():
+            options.append("←:previous")
+        if self.history.can_redo():
+            options.append("→:next")
+        print(f"Available moves: {', '.join(options)}")
 
     def play_audio(self, audio_data=None):
         """Play the current or specified audio"""
         if audio_data is None:
             audio_data = self.current_y
         
-        # Stop any currently playing audio
         sd.stop()
-        
-        # Play the audio
         sd.play(audio_data, self.sr)
         print("Playing audio... Press 'q' to stop")
         
-        # Wait for playback to finish
         try:
             while sd.get_stream().active:
-                user_input = input()
-                if user_input.lower() == 'q':
+                if keyboard.is_pressed('q'):
                     sd.stop()
                     print("Playback stopped")
                     break
@@ -59,6 +155,7 @@ class AudioProcessor:
                 choice = input("\nDo you want to:\n1. Apply these changes\n2. Discard and try different operations\nChoice (1/2): ")
                 if choice == '1':
                     self.current_y = processed_y
+                    self.history.add(self.current_y, operations)
                     return True
                 elif choice == '2':
                     return False
@@ -75,35 +172,40 @@ class AudioProcessor:
 
         for op in operations:
             try:
-                if op['type'] == 'p':  # pitch shift
+                if op['type'] == 'p':
                     y = pitch_shift(y, self.sr, op['value'])
-                elif op['type'] == 't':  # time stretch
+                elif op['type'] == 't':
                     y = time_stretch(y, op['value'])
-                elif op['type'] == 'r':  # resample
+                elif op['type'] == 'r':
                     rate = max(0.1, float(op['value']))
                     target_sr = int(self.sr * rate)
                     y = resample(y, self.sr, target_sr)
                     y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
-                elif op['type'] == 'rt':  # resample-based time stretch
+                elif op['type'] == 'rt':
                     y = resample_time(y, self.sr, op['value'])
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
                 continue
 
-        # Match frequency characteristics and loudness
         y = match_frequency_profile(y, y_original, self.sr)
         y = match_loudness(y, y_original, self.sr)
         
         return y
 
-    def save_current(self, operations=None):
+    def save_current(self):
         """Save the current state of the audio"""
         processed_dir = 'processed'
         os.makedirs(processed_dir, exist_ok=True)
 
         date_str = datetime.now().strftime("%Y%m%d%H%M%S")
         base_name = os.path.splitext(os.path.basename(self.original_file))[0]
-        operations_str = "_".join([f"{op['type']}{op['value']}" for op in operations]) if operations else "no_ops"
+        
+        # Get all operations up to current point
+        all_operations = []
+        for ops in self.history.get_operations_history():
+            all_operations.extend(ops)
+        
+        operations_str = "_".join([f"{op['type']}{op['value']}" for op in all_operations]) if all_operations else "no_ops"
 
         if "processed_" in base_name:
             base_name = base_name.split("_")
@@ -114,11 +216,9 @@ class AudioProcessor:
         output_wav_file = os.path.join(processed_dir, output_name + ".wav")
         output_mp3_file = os.path.join(processed_dir, output_name + ".mp3")
 
-        # Save WAV file
         sf.write(output_wav_file, self.current_y, self.sr)
         print(f"Processed audio (WAV) saved as {output_wav_file}")
 
-        # Convert and save MP3 file
         from pydub import AudioSegment
         sound = AudioSegment.from_wav(output_wav_file)
         sound.export(output_mp3_file, format="mp3")
@@ -189,9 +289,10 @@ def print_menu():
     print("\nAvailable commands:")
     print("1. Enter new operations")
     print("2. Play current audio")
-    print("3. Reset to original")
-    print("4. Save current state")
-    print("5. Exit")
+    print("3. Navigate history")
+    print("4. Reset to original")
+    print("5. Save current state")
+    print("6. Exit")
     
 def print_operation_help():
     """Print help for operation syntax"""
@@ -221,13 +322,12 @@ def main():
             output_path = "."
             file_path = download_video(url, output_path)
 
-    # Initialize audio processor
     processor = AudioProcessor(file_path)
     print(f"\nLoaded audio file: {file_path}")
 
     while True:
         print_menu()
-        choice = input("\nEnter your choice (1-5): ")
+        choice = input("\nEnter your choice (1-6): ")
 
         if choice == '1':
             print_operation_help()
@@ -244,19 +344,21 @@ def main():
             processor.play_audio()
             
         elif choice == '3':
+            processor.navigate_history()
+            
+        elif choice == '4':
             processor.reset_to_original()
             print("Audio reset to original state")
             
-        elif choice == '4':
-            operations = []  # You might want to keep track of applied operations
-            processor.save_current(operations)
-            
         elif choice == '5':
+            processor.save_current()
+            
+        elif choice == '6':
             print("Exiting...")
             break
             
         else:
-            print("Invalid choice. Please enter a number between 1 and 5.")
+            print("Invalid choice. Please enter a number between 1 and 6.")
 
 if __name__ == "__main__":
     main()
