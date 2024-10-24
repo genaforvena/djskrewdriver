@@ -6,9 +6,69 @@ import os
 import sys
 import sounddevice as sd
 import keyboard
+import threading
+import time
 from yt_downloader import download_video
 from datetime import datetime
 from collections import deque
+
+class AudioPlayback:
+    def __init__(self, sr):
+        self.sr = sr
+        self.is_playing = False
+        self.current_position = 0
+        self.playback_thread = None
+        self.stream = None
+        
+    def play_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+        
+        if self.current_position >= len(self.audio_data):
+            self.current_position = 0
+            raise sd.CallbackStop()
+            
+        if len(self.audio_data) - self.current_position < frames:
+            outdata[:len(self.audio_data) - self.current_position] = \
+                self.audio_data[self.current_position:].reshape(-1, 1)
+            outdata[len(self.audio_data) - self.current_position:] = 0
+            raise sd.CallbackStop()
+        else:
+            outdata[:] = self.audio_data[self.current_position:self.current_position + frames].reshape(-1, 1)
+            self.current_position += frames
+
+    def start_playback(self, audio_data, position=None):
+        if position is not None:
+            self.current_position = position
+        else:
+            self.current_position = 0
+            
+        self.audio_data = audio_data
+        
+        if self.stream is not None:
+            self.stream.close()
+            
+        self.stream = sd.OutputStream(
+            samplerate=self.sr,
+            channels=1,
+            callback=self.play_callback
+        )
+        self.stream.start()
+        self.is_playing = True
+
+    def pause_playback(self):
+        if self.stream is not None:
+            self.stream.close()
+            self.is_playing = False
+            
+    def toggle_playback(self, audio_data):
+        if self.is_playing:
+            self.pause_playback()
+        else:
+            self.start_playback(audio_data, self.current_position)
+
+    def reset_position(self):
+        self.current_position = 0
 
 class AudioHistory:
     def __init__(self, max_size=50):
@@ -54,6 +114,7 @@ class AudioHistory:
         """Get list of all operations up to current point"""
         return [ops for _, ops in list(self.history)[:self.current_index + 1]]
 
+
 class AudioProcessor:
     def __init__(self, file_path):
         self.original_file = file_path
@@ -61,51 +122,87 @@ class AudioProcessor:
         self.original_y = self.y.copy()
         self.current_y = self.y.copy()
         self.history = AudioHistory()
-        # Add initial state to history
         self.history.add(self.original_y, [])
-        self.is_playing = False
+        self.playback = AudioPlayback(self.sr)
+        self.input_buffer = ""
         
-    def reset_to_original(self):
-        """Reset audio to original state"""
-        self.current_y = self.original_y.copy()
-        self.history = AudioHistory()
-        self.history.add(self.original_y, [])
-        print("Reset to original audio")
-        return self.current_y
+    def process_input(self, key_event):
+        """Process input character by character"""
+        if key_event.event_type == 'down':
+            if key_event.name == 'space':
+                self.playback.toggle_playback(self.current_y)
+                return True
+                
+            elif key_event.name == 'up':
+                self.playback.reset_position()
+                self.playback.start_playback(self.current_y)
+                return True
+                
+            elif key_event.name == 'left' and self.history.can_undo():
+                state, ops = self.history.undo()
+                self.current_y = state.copy()
+                self.print_history_status()
+                return True
+                
+            elif key_event.name == 'right' and self.history.can_redo():
+                state, ops = self.history.redo()
+                self.current_y = state.copy()
+                self.print_history_status()
+                return True
+                
+            elif key_event.name == 'enter':
+                # Only process if buffer ends with semicolon
+                if self.input_buffer.strip().endswith(';'):
+                    result = self.process_instructions(self.input_buffer)
+                    self.input_buffer = ""
+                    print("\n> ", end='', flush=True)
+                    return result
+                else:
+                    # Add newline if Enter without semicolon
+                    print("\n> " + self.input_buffer, end='', flush=True)
+                return True
+                
+            elif key_event.name == 'backspace':
+                if self.input_buffer:
+                    self.input_buffer = self.input_buffer[:-1]
+                    print('\r> ' + self.input_buffer + ' \b', end='', flush=True)
+                return True
+                
+            elif len(key_event.name) == 1:  # Single character
+                self.input_buffer += key_event.name
+                print(key_event.name, end='', flush=True)
+                return True
+                
+        return True
 
-    def navigate_history(self):
-        """Enter history navigation mode"""
-        print("\nHistory Navigation Mode")
-        print("Use Left/Right arrow keys to navigate")
-        print("Press 'Enter' to confirm or 'Esc' to cancel")
-        print("Press 'p' to preview current state")
-        
-        while True:
-            event = keyboard.read_event(suppress=True)
-            if event.event_type == 'down':
-                if event.name == 'left' and self.history.can_undo():
-                    state, ops = self.history.undo()
-                    self.current_y = state.copy()
-                    self.print_history_status()
+    def process_instructions(self, instructions):
+        """Process instruction string"""
+        instructions = instructions.strip()
+        if instructions == 'q;':
+            return False
+            
+        if not instructions.endswith(';'):
+            return True
+            
+        operations = parse_instructions(instructions)
+        if operations:
+            try:
+                position = self.playback.current_position
+                was_playing = self.playback.is_playing
+                
+                self.current_y = self.apply_operations(self.current_y, operations)
+                self.history.add(self.current_y, operations)
+                
+                if was_playing:
+                    self.playback.start_playback(self.current_y, position)
                     
-                elif event.name == 'right' and self.history.can_redo():
-                    state, ops = self.history.redo()
-                    self.current_y = state.copy()
-                    self.print_history_status()
-                    
-                elif event.name == 'p':
-                    self.play_audio()
-                    
-                elif event.name == 'enter':
-                    print("\nConfirmed current state")
-                    break
-                    
-                elif event.name == 'esc':
-                    # Restore last confirmed state
-                    state, ops = self.history.current()
-                    self.current_y = state.copy()
-                    print("\nCancelled navigation")
-                    break
+                print("\nOperations applied successfully")
+            except Exception as e:
+                print(f"\nError processing audio: {str(e)}")
+        else:
+            print("\nNo valid instructions found. Please check your input.")
+            
+        return True
 
     def print_history_status(self):
         """Print current position in history"""
@@ -114,14 +211,7 @@ class AudioProcessor:
         ops = self.history.current()[1]
         ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
         print(f"\nState {current}/{total}: {ops_str}")
-        
-        # Show navigation options
-        options = []
-        if self.history.can_undo():
-            options.append("←:previous")
-        if self.history.can_redo():
-            options.append("→:next")
-        print(f"Available moves: {', '.join(options)}")
+        print("> " + self.input_buffer, end='', flush=True) 
 
     def play_audio(self, audio_data=None):
         """Play the current or specified audio"""
@@ -284,29 +374,24 @@ def parse_instructions(instructions):
 
     return operations
 
-def print_menu():
-    """Print the main menu options"""
-    print("\nAvailable commands:")
-    print("1. Enter new operations")
-    print("2. Play current audio")
-    print("3. Navigate history")
-    print("4. Reset to original")
-    print("5. Save current state")
-    print("6. Exit")
-    
-def print_operation_help():
-    """Print help for operation syntax"""
-    print("\nEnter your instructions using the following syntax:")
-    print("p:<semitones>; for pitch shift (any number of semitones)")
-    print("t:<rate>; for time stretch using librosa's time_stretch")
-    print("r:<rate>; for resampling (affects both time and pitch)")
+def print_controls():
+    """Print available controls"""
+    print("\nControls:")
+    print("Space: Play/Pause")
+    print("Up Arrow: Restart playback")
+    print("Left/Right Arrows: Navigate history")
+    print("Enter: New line (instructions must end with ;)")
+    print("q;: Exit")
+    print("\nInstructions syntax:")
+    print("p:<semitones>; for pitch shift")
+    print("t:<rate>; for time stretch")
+    print("r:<rate>; for resampling")
     print("rt:<rate>; for time stretch using resampling")
     print("\nRates: 1.0 = normal, 2.0 = double speed, 0.5 = half speed")
-    print("Example: p:2;rt:0.75;r:1.5;")
-    print("Note: Use either dot (.) or comma (,) as decimal separator")
+    print("Example: p:2;rt:0.75;")
+    print("\nNote: All instructions must end with a semicolon (;)")
 
 def main():
-    # Handle input file or YouTube URL
     if len(sys.argv) > 1:
         arg = sys.argv[1]
         if arg.startswith('https'):
@@ -324,41 +409,19 @@ def main():
 
     processor = AudioProcessor(file_path)
     print(f"\nLoaded audio file: {file_path}")
+    print_controls()
+    print("\n> ", end='', flush=True)
 
-    while True:
-        print_menu()
-        choice = input("\nEnter your choice (1-6): ")
-
-        if choice == '1':
-            print_operation_help()
-            instructions = input("\nInstructions: ")
-            if instructions:
-                operations = parse_instructions(instructions)
-                if operations:
-                    if processor.preview_operations(operations):
-                        print("Operations applied successfully")
-                else:
-                    print("No valid instructions found. Please check your input.")
-                    
-        elif choice == '2':
-            processor.play_audio()
-            
-        elif choice == '3':
-            processor.navigate_history()
-            
-        elif choice == '4':
-            processor.reset_to_original()
-            print("Audio reset to original state")
-            
-        elif choice == '5':
-            processor.save_current()
-            
-        elif choice == '6':
-            print("Exiting...")
-            break
-            
-        else:
-            print("Invalid choice. Please enter a number between 1 and 6.")
+    try:
+        while True:
+            event = keyboard.read_event(suppress=True)
+            if not processor.process_input(event):
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        processor.playback.pause_playback()
+        print("\nExiting...")
 
 if __name__ == "__main__":
     main()
