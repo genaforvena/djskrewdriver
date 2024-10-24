@@ -1,6 +1,6 @@
 # DJ Screwdriver 🎚️
 
-A Python-based audio manipulation tool that lets you experiment with track speeds and pitches using different algorithms. Perfect for creating remixes, vaporwave-style edits, or any creative audio experiments.
+A Python-based audio manipulation tool that lets you experiment with track speeds and pitches using different algorithms. Perfect for creating remixes, vaporwave-style edits, or any creative audio experiments. Explore interesting audio artifacts through iterative processing and spectral manipulation.
 
 ## ✨ Features
 
@@ -12,6 +12,23 @@ A Python-based audio manipulation tool that lets you experiment with track speed
 - Chain multiple operations in sequence
 - Automatic output in both WAV and MP3 formats
 - Timestamped output files for easy organization
+- FFT-based frequency characteristic preservation
+- Original loudness level matching
+- Unique audio artifacts through iterative processing
+
+## 🎨 Creative Effects
+
+### 🌀 Iterative Processing
+- Each processing cycle introduces unique audio characteristics
+- Multiple iterations can create fascinating sound textures
+- Experiment with repeated stretch/compress cycles for interesting artifacts
+- For example, stretching to 2x length and compressing back creates subtle but noticeable effects
+
+### 🎯 Spectral Manipulation
+- FFT-based processing preserves original frequency characteristics
+- Spectrogram analysis ensures consistent sound quality
+- Maintains core audio features while allowing creative manipulation
+- Perfect for experimental sound design and texture creation
 
 ## 🚀 Installation
 
@@ -73,10 +90,11 @@ Processed files are saved in a `processed` directory with timestamps:
 
 ## 🛠️ Dependencies
 
-- librosa - For audio processing
+- librosa - For audio processing and FFT analysis
 - soundfile - For WAV file handling
 - pydub - For MP3 conversion
 - youtube-dl - For YouTube downloads
+- numpy - For numerical operations and FFT processing
 
 ## 🎵 Examples
 
@@ -94,6 +112,11 @@ Processed files are saved in a `processed` directory with timestamps:
    ```bash
    python main.py song.mp3 "t:0.75;"  # librosa time_stretch
    python main.py song.mp3 "rt:0.75;" # resampling method
+   ```
+
+4. Create interesting artifacts through multiple iterations:
+   ```bash
+   python main.py song.mp3 "rt:2.0;rt:0.5;"  # stretch then compress
    ```
 
 ## 🎯 Command Effects Guide
@@ -117,12 +140,21 @@ Processed files are saved in a `processed` directory with timestamps:
   - `rt:0.5;` = Half speed
   - May produce different artifacts compared to `t`
   - Useful for creating specific audio effects
+  - Multiple iterations can create unique textures
 
 - **Resample (`r`)**: Uses librosa.resample
   - Values are rate multipliers where 1.0 is original speed
   - `r:2.0;` = Double speed (up one octave)
   - `r:0.5;` = Half speed (down one octave)
   - Changes both speed and pitch together
+
+## 🔬 Technical Details
+
+- Uses FFT-based analysis to maintain spectral characteristics
+- Implements spectrogram matching for frequency preservation
+- Preserves original loudness levels through RMS matching
+- Creates unique artifacts through multiple processing iterations
+- Perfect for experimental sound design and audio research
 
 ## 🤝 Contributing
 
