@@ -487,7 +487,7 @@ class AudioProcessor:
                 elif op['type'] == 'rev':
                     y = reverse_by_beats(y, self.sr, beats, op['value'])
                 elif op['type'] == 'speed':
-                    y = change_speed(y, self.sr, op['value'])
+                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
                 elif op['type'] == 'stut':
                     y = add_stutter(y, self.sr, beats, rate=op['value'])
                 elif op['type'] == 'echo':
@@ -938,12 +938,46 @@ def apply_frequency_muting(y, sr, threshold_db=-40, frame_length=2048, hop_lengt
     
     return y_filtered
 
-def extract_percussive_track(y, sr):
+def extract_percussive_track(y, sr, frame_length=2048, hop_length=512, threshold_db=-40):
     """
     Extract percussive components from the audio signal.
     """
     y_harmonic, y_percussive = librosa.effects.hpss(y)
-    return y_percussive
+    
+    # Compute STFT
+    D = librosa.stft(y, n_fft=frame_length, hop_length=hop_length)
+    
+    # Get magnitude and phase
+    mag, phase = librosa.magphase(D)
+    
+    # Convert to dB scale
+    mag_db = librosa.amplitude_to_db(mag)
+    
+    # Create mask based on threshold
+    mask = mag_db > threshold_db
+    
+    # Create a standard envelope for the frame length
+    frame_envelope = create_drum_envelope(frame_length//2 + 1, sr)  # match STFT frequency bins
+    
+    # For each time frame where we have frequencies above threshold
+    for frame in range(mask.shape[1]):
+        if np.any(mask[:, frame]):
+            # Apply envelope to the entire frequency range
+            mag[:, frame] = mag[:, frame] * frame_envelope
+            
+    # Apply threshold mask
+    mag = mag * mask
+    
+    # Reconstruct signal
+    y_filtered = librosa.istft(mag * phase, hop_length=hop_length)
+    
+    # Ensure output length matches input
+    if len(y_filtered) > len(y):
+        y_filtered = y_filtered[:len(y)]
+    elif len(y_filtered) < len(y):
+        y_filtered = np.pad(y_filtered, (0, len(y) - len(y_filtered)))
+    
+    return y_filtered
     """
     Mute frequencies below threshold with drum-like decay
     threshold_db: threshold in dB below which to mute frequencies
