@@ -1017,14 +1017,8 @@ def print_controls():
     print("s;: Save current version")
     print("q;: Exit")
     print("\nInstructions syntax:")
-    print("p:<semitones>; for pitch shift")
-    print("t:<rate>; for time stretch")
-    print("r:<rate>; for resampling")
-    print("rt:<rate>; for time stretch using resampling")
-    print("perc:; for percussive track extraction")
-    print("copy:<start_byte>:<num_bytes>; for copying sound from one byte to the next user-provided bytes")
-    print("\nRates: 1.0 = normal, 2.0 = double speed, 0.5 = half speed")
-    print("Example: p:2;rt:0.75;")
+    print("command:number:number:number;")
+    print("Example: p:2:1:3; for pitch shift with arguments 2, 1, and 3")
     print("\nNote: All instructions must end with a semicolon (;)")
 
 def main():
