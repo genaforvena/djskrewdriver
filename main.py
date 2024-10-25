@@ -485,26 +485,26 @@ class AudioProcessor:
                 elif op['type'] == 'rt':
                     y = resample_time(y, self.sr, op['value'])
                 elif op['type'] == 'rev':
-                    # Reverse the audio in beat-synchronized chunks
                     y = reverse_by_beats(y, self.sr, beats, op['value'])
                 elif op['type'] == 'speed':
-                    # Change speed without affecting pitch using phase vocoder
                     y = change_speed(y, self.sr, op['value'])
                 elif op['type'] == 'stut':
-                    # Add stutter effect synchronized with beats
                     y = add_stutter(y, self.sr, beats, rate=op['value'])
                 elif op['type'] == 'echo':
-                    # Add echo effect synchronized with beat length
                     delay = op['value'] if op['value'] > 0 else beat_length
                     y = add_echo(y, self.sr, delay=delay, beats=beats)
                 elif op['type'] == 'loop':
-                    # Loop with beat-synchronized length
-                    beats_per_loop = op['value'] if op['value'] > 0 else 4  # Default to 4 beats
+                    beats_per_loop = op['value'] if op['value'] > 0 else 4
                     y = create_loop(y, self.sr, beats, beats_per_loop)
                 elif op['type'] == 'chop':
-                    # Chop and rearrange beats
                     beats_per_chunk = op['value'] if op['value'] > 0 else 2
                     y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk)
+                elif op['type'] == 'mute':
+                    # Mute frequencies below threshold with drum decay
+                    y = apply_frequency_muting(y, self.sr, threshold_db=op['value'])
+                elif op['type'] == 'trig':
+                    # Trigger-based muting with adjustable sensitivity
+                    y = apply_trigger_muting(y, self.sr, sensitivity=op['value'], beats=beats)
                 elif op['type'] == 'n':
                     threshold = op['value']
                     preserve_ranges = [
@@ -784,6 +784,71 @@ class AudioHistory:
     def get_operations_history(self):
         """Get list of all operations up to current point"""
         return [ops for _, ops in list(self.history)[:self.current_index + 1]]
+    
+    def apply_operations(self, y, operations):
+        """Apply audio operations"""
+        y_original = y.copy()
+        
+        # Detect BPM at the start
+        tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr)
+        beat_length = 60.0 / tempo  # Length of one beat in seconds
+        
+        for op in operations:
+            try:
+                if op['type'] == 'p':
+                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=op['value'])
+                elif op['type'] == 't':
+                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
+                elif op['type'] == 'r':
+                    rate = max(0.1, float(op['value']))
+                    target_sr = int(self.sr * rate)
+                    y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
+                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
+                elif op['type'] == 'rt':
+                    y = resample_time(y, self.sr, op['value'])
+                elif op['type'] == 'rev':
+                    y = reverse_by_beats(y, self.sr, beats, op['value'])
+                elif op['type'] == 'speed':
+                    y = change_speed(y, self.sr, op['value'])
+                elif op['type'] == 'stut':
+                    y = add_stutter(y, self.sr, beats, rate=op['value'])
+                elif op['type'] == 'echo':
+                    delay = op['value'] if op['value'] > 0 else beat_length
+                    y = add_echo(y, self.sr, delay=delay, beats=beats)
+                elif op['type'] == 'loop':
+                    beats_per_loop = op['value'] if op['value'] > 0 else 4
+                    y = create_loop(y, self.sr, beats, beats_per_loop)
+                elif op['type'] == 'chop':
+                    beats_per_chunk = op['value'] if op['value'] > 0 else 2
+                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk)
+                elif op['type'] == 'mute':
+                    # Mute frequencies below threshold with drum decay
+                    y = apply_frequency_muting(y, self.sr, threshold_db=op['value'])
+                elif op['type'] == 'trig':
+                    # Trigger-based muting with adjustable sensitivity
+                    y = apply_trigger_muting(y, self.sr, sensitivity=op['value'], beats=beats)
+                elif op['type'] == 'n':
+                    threshold = op['value']
+                    preserve_ranges = [
+                        (80, 1200),    # Voice fundamental frequencies
+                        (2000, 4000)   # Voice harmonics and clarity
+                    ]
+                    y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
+        
+            except Exception as e:
+                print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
+                continue
+
+        preserve_ranges = [
+                        (80, 1200),    # Voice fundamental frequencies
+                        (2000, 4000)   # Voice harmonics and clarity
+                    ]
+        y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
+        # Match characteristics
+        y = match_frequency_profile(y, y_original, self.sr)
+        y = match_loudness(y, y_original, self.sr)
+        
+        return y
 
 
 def match_frequency_profile(modified, original, sr):
@@ -831,10 +896,118 @@ def resample_time(y, sr, rate):
     y_changed = librosa.resample(y, orig_sr=sr, target_sr=intermediate_sr)
     return librosa.resample(y_changed, orig_sr=intermediate_sr, target_sr=sr)
 
+def apply_frequency_muting(y, sr, threshold_db=-40, frame_length=2048, hop_length=512):
+    """
+    Mute frequencies below threshold with drum-like decay
+    threshold_db: threshold in dB below which to mute frequencies
+    """
+    # Compute STFT
+    D = librosa.stft(y, n_fft=frame_length, hop_length=hop_length)
+    
+    # Get magnitude and phase
+    mag, phase = librosa.magphase(D)
+    
+    # Convert to dB scale
+    mag_db = librosa.amplitude_to_db(mag)
+    
+    # Create mask based on threshold
+    mask = mag_db > threshold_db
+    
+    # Create a standard envelope for the frame length
+    frame_envelope = create_drum_envelope(frame_length//2 + 1, sr)  # match STFT frequency bins
+    
+    # For each time frame where we have frequencies above threshold
+    for frame in range(mask.shape[1]):
+        if np.any(mask[:, frame]):
+            # Apply envelope to the entire frequency range
+            mag[:, frame] = mag[:, frame] * frame_envelope
+            
+    # Apply threshold mask
+    mag = mag * mask
+    
+    # Reconstruct signal
+    y_filtered = librosa.istft(mag * phase, hop_length=hop_length)
+    
+    # Ensure output length matches input
+    if len(y_filtered) > len(y):
+        y_filtered = y_filtered[:len(y)]
+    elif len(y_filtered) < len(y):
+        y_filtered = np.pad(y_filtered, (0, len(y) - len(y_filtered)))
+    
+    return y_filtered
+
+def create_drum_envelope(length, sr, decay=0.1):
+    """
+    Create a drum-like decay envelope
+    length: number of samples
+    sr: sample rate
+    decay: decay time in seconds
+    """
+    t = np.linspace(0, length/sr, length)
+    # Exponential decay with quick attack
+    attack = 0.005  # 5ms attack time
+    attack_samples = int(attack * sr)
+    attack_samples = min(attack_samples, length//4)  # Ensure attack isn't too long
+    
+    envelope = np.zeros(length)
+    # Attack phase
+    if attack_samples > 0:
+        envelope[:attack_samples] = np.linspace(0, 1, attack_samples)
+    # Decay phase
+    decay_samples = length - attack_samples
+    if decay_samples > 0:
+        envelope[attack_samples:] = np.exp(-np.linspace(0, 3, decay_samples))
+    
+    # Normalize envelope
+    envelope = envelope / np.max(envelope)
+    
+    return envelope
+
+def apply_trigger_muting(y, sr, sensitivity=0.5, beats=None, frame_length=2048, hop_length=512):
+    """
+    Apply trigger-based muting with drum-like decay
+    sensitivity: threshold for triggering (0.0 to 1.0)
+    """
+    # Convert sensitivity to absolute threshold
+    rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)
+    threshold = np.max(rms) * sensitivity
+    
+    # Get onset strength
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    
+    # Detect onsets
+    onsets = librosa.onset.onset_detect(
+        onset_envelope=onset_env,
+        sr=sr,
+        units='samples',
+        threshold=sensitivity
+    )
+    
+    # Create output signal
+    y_out = np.zeros_like(y)
+    
+    # For each onset
+    for i, onset in enumerate(onsets):
+        # Determine segment length (until next onset or end)
+        if i < len(onsets) - 1:
+            segment_length = onsets[i + 1] - onset
+        else:
+            segment_length = len(y) - onset
+            
+        # Create drum envelope for this segment
+        envelope = create_drum_envelope(segment_length, sr)
+        
+        # Apply envelope to segment
+        if onset + segment_length <= len(y):
+            y_out[onset:onset + segment_length] = y[onset:onset + segment_length] * envelope
+    
+    return y_out
+
 def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
-    pattern = r"(rt|[ptr]):(-?\d*[.,]?\d+);?"
+    # Added mute and trig to the pattern
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|[ptr]):(-?\d*[.,]?\d+);?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
