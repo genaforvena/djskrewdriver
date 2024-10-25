@@ -514,6 +514,10 @@ class AudioProcessor:
                     y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
                 elif op['type'] == 'perc':
                     y = extract_percussive_track(y, self.sr)
+                elif op['type'] == 'copy':
+                    start_byte = int(op['value'])
+                    num_bytes = int(op['value2']) if 'value2' in op else 1
+                    y[start_byte:start_byte + num_bytes] = y[start_byte]
         
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
@@ -1088,7 +1092,7 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Added mute and trig to the pattern
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|[ptr]):(-?\d*[.,]?\d+);?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+);?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -1113,6 +1117,7 @@ def print_controls():
     print("r:<rate>; for resampling")
     print("rt:<rate>; for time stretch using resampling")
     print("perc:; for percussive track extraction")
+    print("copy:<start_byte>:<num_bytes>; for copying sound from one byte to the next user-provided bytes")
     print("\nRates: 1.0 = normal, 2.0 = double speed, 0.5 = half speed")
     print("Example: p:2;rt:0.75;")
     print("\nNote: All instructions must end with a semicolon (;)")
