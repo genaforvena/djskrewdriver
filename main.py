@@ -1028,41 +1028,6 @@ def too_long_name_truncation(name, max_length=255):
     """Truncate the name to a maximum length."""
     return name[:max_length]  # Truncate to max_length
 
-def main():
-    if len(sys.argv) > 1:
-        arg = sys.argv[1]
-        if arg.startswith('https'):
-            url = arg
-            output_path = "."
-            file_path = download_video(url, output_path)
-        else:
-            file_path = arg
-    else:
-        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
-        if not file_path:
-            url = input("Enter the YouTube video URL: ")
-            output_path = "."
-            file_path = download_video(url, output_path)
-
-    processor = AudioProcessor(file_path)
-    print(f"\nLoaded audio file: {file_path}")
-    print_controls()
-    print("\n> ", end='', flush=True)
-
-    try:
-        while True:
-            event = keyboard.read_event(suppress=True)
-            if not processor.process_input(event):
-                break
-    except KeyboardInterrupt:
-        pass
-    finally:
-        processor.cleanup()
-        print("\nExiting...")
-
-if __name__ == "__main__":
-    main()
-
 def random_mix_beats(y, sr, beats, num_parts, num_beats, repeat_interval):
     """
     Randomly mix parts of each beat divided by num_parts and do it every repeat_interval beats.
@@ -1097,3 +1062,60 @@ def random_mix_beats(y, sr, beats, num_parts, num_beats, repeat_interval):
         output[start:end] = mixed_segment
     
     return output
+
+def main():
+    file_path = None
+    commands = None
+    
+    # Parse command line arguments
+    if len(sys.argv) > 1:
+        # First argument is either file path or URL
+        arg = sys.argv[1]
+        if arg.startswith('https'):
+            url = arg
+            output_path = "."
+            file_path = download_video(url, output_path)
+        else:
+            file_path = arg
+            
+        # Check for commands in second argument
+        if len(sys.argv) > 2:
+            commands = sys.argv[2]
+    
+    # If no file path provided, ask for input
+    if not file_path:
+        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
+        if not file_path:
+            url = input("Enter the YouTube video URL: ")
+            output_path = "."
+            file_path = download_video(url, output_path)
+
+    processor = AudioProcessor(file_path)
+    print(f"\nLoaded audio file: {file_path}")
+    
+    # If commands were provided as argument, process them first
+    if commands:
+        print(f"Processing commands: {commands}")
+        processor.process_instructions(commands)
+        processor.save_current_state()
+        print("\nProcessing complete. File saved.")
+        processor.cleanup()
+        return
+    
+    # Otherwise, enter interactive mode
+    print_controls()
+    print("\n> ", end='', flush=True)
+
+    try:
+        while True:
+            event = keyboard.read_event(suppress=True)
+            if not processor.process_input(event):
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        processor.cleanup()
+        print("\nExiting...")
+
+if __name__ == "__main__":
+    main()
