@@ -228,6 +228,7 @@ class AudioProcessor:
         return y_filtered
 
     def process_instructions(self, instructions):
+        """Process instruction string"""
         instructions = instructions.strip()
         if instructions == 'q;':
             return False
@@ -364,7 +365,7 @@ class AudioProcessor:
         
         # Create operations string for filename
         if operations_history:
-            operations_str = "_".join([f"{op['type']}{op['value']}" for op in operations_history])
+            operations_str = "_".join([f"{op['type']}{'_'.join(map(str, op['values']))}" for op in operations_history])  # Use 'values' instead of 'value'
         else:
             operations_str = "no_ops"
             
@@ -459,10 +460,10 @@ class AudioProcessor:
         current = self.history.current_index + 1
         total = len(self.history.history)
         ops = self.history.current()[0]  # Operations are now first in tuple
-        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
+        ops_str = " → ".join([f"{op['type']}:{'_'.join(map(str, op['values']))}" for op in ops]) if ops else "Original"
         print(f"\nState {current}/{total}: {ops_str}")
         print("> " + self.input_buffer, end='', flush=True)
-    
+
     def apply_operations(self, y, operations):
         """Apply audio operations"""
         y_original = y.copy()
@@ -473,40 +474,42 @@ class AudioProcessor:
         
         for op in operations:
             try:
+                # Extract values with defaults
+                values = op['values']
+                value1 = values[0] if len(values) > 0 else 1
+                value2 = values[1] if len(values) > 1 else 4
+                value3 = values[2] if len(values) > 2 else 1
+                
                 if op['type'] == 'p':
-                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=op['value'])
+                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=value1)
                 elif op['type'] == 't':
-                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
+                    y = librosa.effects.time_stretch(y, rate=float(value1))
                 elif op['type'] == 'r':
-                    rate = max(0.1, float(op['value']))
+                    rate = max(0.1, float(value1))
                     target_sr = int(self.sr * rate)
                     y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
                     y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
                 elif op['type'] == 'rt':
-                    y = resample_time(y, self.sr, op['value'])
+                    y = resample_time(y, self.sr, value1)
                 elif op['type'] == 'rev':
-                    y = reverse_by_beats(y, self.sr, beats, op['value'], op['n'], op['m'])
+                    y = reverse_by_beats(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'speed':
-                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
+                    y = librosa.effects.time_stretch(y, rate=float(value1))
                 elif op['type'] == 'stut':
-                    y = add_stutter(y, self.sr, beats, rate=op['value'], n=op['n'], m=op['m'])
+                    y = add_stutter(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'echo':
-                    delay = op['value'] if op['value'] > 0 else beat_length
-                    y = add_echo(y, self.sr, delay=delay, beats=beats, n=op['n'], m=op['m'])
+                    delay = value1 if value1 > 0 else beat_length
+                    y = add_echo(y, self.sr, delay, beats, value1, value2, value3)
                 elif op['type'] == 'loop':
-                    beats_per_loop = op['value'] if op['value'] > 0 else 4
-                    y = create_loop(y, self.sr, beats, beats_per_loop, n=op['n'], m=op['m'])
+                    y = create_loop(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'chop':
-                    beats_per_chunk = op['value'] if op['value'] > 0 else 2
-                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk, n=op['n'], m=op['m'])
+                    y = chop_and_rearrange(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'mute':
-                    # Mute frequencies below threshold with drum decay
-                    y = apply_frequency_muting(y, self.sr, threshold_db=op['value'])
+                    y = apply_frequency_muting(y, self.sr, threshold_db=value1)
                 elif op['type'] == 'trig':
-                    # Trigger-based muting with adjustable sensitivity
-                    y = apply_trigger_muting(y, self.sr, sensitivity=op['value'], beats=beats)
+                    y = apply_trigger_muting(y, self.sr, sensitivity=value1, beats=beats)
                 elif op['type'] == 'n':
-                    threshold = op['value']
+                    threshold = value1
                     preserve_ranges = [
                         (80, 1200),    # Voice fundamental frequencies
                         (2000, 4000)   # Voice harmonics and clarity
@@ -515,18 +518,18 @@ class AudioProcessor:
                 elif op['type'] == 'perc':
                     y = extract_percussive_track(y, self.sr)
                 elif op['type'] == 'copy':
-                    start_byte = int(op['value'])
-                    num_bytes = int(op['value2']) if 'value2' in op else 1
+                    start_byte = int(value1)
+                    num_bytes = int(value2)
                     y[start_byte:start_byte + num_bytes] = y[start_byte]
         
             except Exception as e:
-                print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
+                print(f"Warning: Operation {op['type']}:{values} failed: {str(e)}")
                 continue
 
         preserve_ranges = [
-                        (80, 1200),    # Voice fundamental frequencies
-                        (2000, 4000)   # Voice harmonics and clarity
-                    ]
+            (80, 1200),    # Voice fundamental frequencies
+            (2000, 4000)   # Voice harmonics and clarity
+        ]
         y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
         # Match characteristics
         y = match_frequency_profile(y, y_original, self.sr)
@@ -534,40 +537,10 @@ class AudioProcessor:
         
         return y
 
+
 def get_beat_frames(beats, sr, hop_length=512):
     """Convert beat positions to frame indices"""
     return librosa.frames_to_samples(beats, hop_length=hop_length)
-
-def reverse_by_beats(y, sr, beats, value1, value2, value3):
-    """
-    Reverse audio in chunks of specified beats
-    num_beats: number of beats per reversed chunk
-    """
-    # Get beat frames
-    beat_frames = get_beat_frames(beats, sr)
-    
-    # Create output array
-    output = np.zeros_like(y)
-    
-    # Process in chunks of num_beats
-    for i in range(0, len(beat_frames) - value2, value2 * value3):
-        if (i // value2) % value1 == 0:
-            start = beat_frames[i]
-            end = beat_frames[i + num_beats] if i + num_beats < len(beat_frames) else len(y)
-            
-            # Reverse this chunk
-            chunk = y[start:end]
-            output[start:end] = chunk[::-1]
-            
-            # Apply crossfade
-            if i > 0:
-                crossfade_length = min(1024, end - start)
-                fade_in = np.linspace(0, 1, crossfade_length)
-                fade_out = np.linspace(1, 0, crossfade_length)
-                output[start:start + crossfade_length] *= fade_in
-                output[start - crossfade_length:start] *= fade_out
-    
-    return output
 
 def add_stutter(y, sr, beats, value1, value2, value3):
     """
@@ -645,118 +618,137 @@ def add_echo(y, sr, delay, beats, value1, value2, value3):
     output = output / np.max(np.abs(output))
     return output
 
+def reverse_by_beats(y, sr, beats, value1, value2, value3):
+    """
+    Reverse audio in chunks of specified beats
+    value1: interval between reversals
+    value2: number of beats per reversed chunk
+    value3: repeat pattern every N beats
+    """
+    # Get beat frames
+    beat_frames = get_beat_frames(beats, sr)
+    
+    # Create output array
+    output = np.zeros_like(y)
+    output[:] = y[:]  # Copy original signal
+    
+    # Process in chunks
+    for i in range(0, len(beat_frames) - int(value2), int(value2 * value3)):
+        if (i // int(value2)) % int(value1) == 0:
+            start = beat_frames[i]
+            end = beat_frames[min(i + int(value2), len(beat_frames) - 1)]
+            
+            # Reverse this chunk
+            chunk = y[start:end]
+            output[start:end] = chunk[::-1]
+            
+            # Apply crossfade
+            if i > 0:
+                crossfade_length = min(1024, end - start)
+                fade_in = np.linspace(0, 1, crossfade_length)
+                fade_out = np.linspace(1, 0, crossfade_length)
+                output[start:start + crossfade_length] *= fade_in
+                output[start - crossfade_length:start] *= fade_out
+    
+    return output
+
 def create_loop(y, sr, beats, value1, value2, value3):
     """
     Create loops synchronized with beats
-    beats_per_loop: number of beats per loop
-    loop_portion: portion of the beat to loop (0.0 to 1.0)
+    value1: number of beats per loop
+    value2: loop portion length in beats
+    value3: repeat pattern every N beats
     """
     beat_frames = get_beat_frames(beats, sr)
     
-    if len(beat_frames) < beats_per_loop + 1:
+    if len(beat_frames) < int(value1) + 1:
         return y
     
     # Create output array
     output = np.zeros_like(y)
+    output[:] = y[:]  # Copy original signal
     
     # Loop through beats and create loops
-    for i in range(0, len(beat_frames) - 1, value3):
-        if (i // value3) % value1 == 0:
+    for i in range(0, len(beat_frames) - int(value2), int(value2 * value3)):
+        if (i // int(value2)) % int(value1) == 0:
             start = beat_frames[i]
-            end = beat_frames[i + 1]
-            beat_length = end - start
+            end = beat_frames[min(i + int(value2), len(beat_frames) - 1)]
+            loop_length = end - start
             
-            # Determine loop start and end within the beat
-            loop_start = start + int(beat_length * (1 - loop_portion))
-            loop_end = end
-            
-            # Extract loop portion
-            loop = y[loop_start:loop_end]
-            
-            # Apply crossfade
-            crossfade_length = min(1024, len(loop) // 4)
+            # Create crossfade
+            crossfade_length = min(1024, loop_length // 4)
             fade_in = np.linspace(0, 1, crossfade_length)
             fade_out = np.linspace(1, 0, crossfade_length)
             
+            # Apply loop effect
+            loop = y[start:end]
             loop[-crossfade_length:] *= fade_out
             loop[:crossfade_length] *= fade_in
             
-            # Repeat loop portion
-            num_loops = int(np.ceil(beat_length / len(loop)))
-            loop_repeated = np.tile(loop, num_loops)[:beat_length]
-            
             # Add to output
-            output[start:end] += loop_repeated
+            output[start:end] = loop
     
-    # Normalize
-    output = output / np.max(np.abs(output))
     return output
 
 def chop_and_rearrange(y, sr, beats, value1, value2, value3):
     """
     Chop audio into beat-sized chunks and rearrange them
-    beats_per_chunk: number of beats per chunk
+    value1: number of beats per chunk
+    value2: step size in beats
+    value3: pattern repeat interval
     """
     beat_frames = get_beat_frames(beats, sr)
     
-    if len(beat_frames) < beats_per_chunk + 1:
+    if len(beat_frames) < int(value1) + 1:
         return y
         
+    # Create output array
+    output = np.zeros_like(y)
+    output[:] = y[:]  # Copy original signal
+    
     # Create chunks
     chunks = []
-    for i in range(0, len(beat_frames) - value2, value2 * value3):
-        if (i // value2) % value1 == 0:
+    for i in range(0, len(beat_frames) - int(value2), int(value2 * value3)):
+        if (i // int(value2)) % int(value1) == 0:
             start = beat_frames[i]
-            end = beat_frames[i + beats_per_chunk]
-            chunks.append(y[start:end])
+            end = beat_frames[min(i + int(value2), len(beat_frames) - 1)]
+            chunks.append((start, end))
     
     if not chunks:
         return y
     
-    # Rearrange chunks in an interesting pattern
-    # Example pattern: 1, 2, 2, 1, 3, 3, 2, 1
-    pattern = []
+    # Rearrange chunks in pattern
+    crossfade_length = 1024
+    
     for i in range(len(chunks)):
-        pattern.extend([i, i, (i + 1) % len(chunks)])
-    
-    # Create output
-    output = np.zeros_like(y)
-    pos = 0
-    crossfade_length = min(1024, len(chunks[0]) // 4)
-    
-    for idx in pattern:
-        if pos + len(chunks[idx]) > len(output):
-            break
+        if i + 1 < len(chunks):
+            start, end = chunks[i]
+            next_start, next_end = chunks[i + 1]
             
-        # Add chunk with crossfade
-        if pos > 0:
-            # Crossfade with previous chunk
-            fade_in = np.linspace(0, 1, crossfade_length)
-            fade_out = np.linspace(1, 0, crossfade_length)
-            output[pos:pos + crossfade_length] *= fade_out
-            chunk_data = chunks[idx].copy()
-            chunk_data[:crossfade_length] *= fade_in
-            output[pos:pos + len(chunk_data)] += chunk_data
-        else:
-            output[pos:pos + len(chunks[idx])] = chunks[idx]
-            
-        pos += len(chunks[idx])
+            # Apply crossfade between chunks
+            if end > start + crossfade_length and next_end > next_start + crossfade_length:
+                fade_out = np.linspace(1, 0, crossfade_length)
+                fade_in = np.linspace(0, 1, crossfade_length)
+                
+                output[end - crossfade_length:end] *= fade_out
+                output[next_start:next_start + crossfade_length] *= fade_in
     
-    # Trim to original length and normalize
-    output = output[:len(y)]
-    output = output / np.max(np.abs(output))
     return output
+
 
 def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
-    pattern = r"(chop|rev|speed|stut|echo|loop|rt|[ptr]):(-?\d*[.,]?\d+);?"
+    # Updated pattern to match the new format with any number of arguments
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        cmd_type, value = match.groups()
-        value = float(value.replace(',', '.'))
-        operations.append({'type': cmd_type, 'value': value})
+        if match.groups() and len(match.groups()) >= 2:
+            cmd_type, args = match.groups()[:2]  # Ensure we only take the first two groups
+            args = args.split(':')[:-1]  # Remove the last empty string
+            values = [float(arg.replace(',', '.')) for arg in args]
+            operations.append({'type': cmd_type, 'values': values})  # Changed 'value' to 'values'
 
     return operations
 
@@ -999,10 +991,11 @@ def parse_instructions(instructions):
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        cmd_type, args = match.groups()
-        args = args.split(':')[:-1]  # Remove the last empty string
-        values = [float(arg.replace(',', '.')) for arg in args]
-        operations.append({'type': cmd_type, 'values': values})
+        if match.groups() and len(match.groups()) >= 2:
+            cmd_type, args = match.groups()[:2]  # Ensure we only take the first two groups
+            args = args.split(':')[:-1]  # Remove the last empty string
+            values = [float(arg.replace(',', '.')) for arg in args]
+            operations.append({'type': cmd_type, 'values': values})  # Changed 'value' to 'values'
 
     return operations
 
