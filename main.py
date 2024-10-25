@@ -247,6 +247,11 @@ class AudioProcessor:
             self.apply_changes()  # Apply changes to the track
             print("\nChanges applied.")
             return True  # Continue processing instructions
+        # Check for playback toggle command
+        elif instructions == 'p;':
+            self.playback.toggle_playback()  # Toggle playback
+            print("\nPlayback toggled.")
+            return True  # Continue processing instructions
 
         # Check for incomplete instruction
         if not instructions.endswith(';'):
