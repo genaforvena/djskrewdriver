@@ -1,1 +1,2 @@
 ghost;rt:2.5;p:12;stut:8:1:2;chop:1:2:1; 
+nazar;p:-5;a;rt:2.5;chop:1:2:1;loop:1:4:2;t:0.85;a;chop:1:2:1;stut:10:1:14;loop:1:4:2;bpm:240;a;loop:1:6:2;a;
