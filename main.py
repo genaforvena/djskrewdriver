@@ -662,31 +662,31 @@ def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5, n=1, m=1):
     # Loop through beats and create loops
     for i in range(0, len(beat_frames) - 1, m):
         if (i // m) % n == 0:
-        start = beat_frames[i]
-        end = beat_frames[i + 1]
-        beat_length = end - start
-        
-        # Determine loop start and end within the beat
-        loop_start = start + int(beat_length * (1 - loop_portion))
-        loop_end = end
-        
-        # Extract loop portion
-        loop = y[loop_start:loop_end]
-        
-        # Apply crossfade
-        crossfade_length = min(1024, len(loop) // 4)
-        fade_in = np.linspace(0, 1, crossfade_length)
-        fade_out = np.linspace(1, 0, crossfade_length)
-        
-        loop[-crossfade_length:] *= fade_out
-        loop[:crossfade_length] *= fade_in
-        
-        # Repeat loop portion
-        num_loops = int(np.ceil(beat_length / len(loop)))
-        loop_repeated = np.tile(loop, num_loops)[:beat_length]
-        
-        # Add to output
-        output[start:end] += loop_repeated
+            start = beat_frames[i]
+            end = beat_frames[i + 1]
+            beat_length = end - start
+            
+            # Determine loop start and end within the beat
+            loop_start = start + int(beat_length * (1 - loop_portion))
+            loop_end = end
+            
+            # Extract loop portion
+            loop = y[loop_start:loop_end]
+            
+            # Apply crossfade
+            crossfade_length = min(1024, len(loop) // 4)
+            fade_in = np.linspace(0, 1, crossfade_length)
+            fade_out = np.linspace(1, 0, crossfade_length)
+            
+            loop[-crossfade_length:] *= fade_out
+            loop[:crossfade_length] *= fade_in
+            
+            # Repeat loop portion
+            num_loops = int(np.ceil(beat_length / len(loop)))
+            loop_repeated = np.tile(loop, num_loops)[:beat_length]
+            
+            # Add to output
+            output[start:end] += loop_repeated
     
     # Normalize
     output = output / np.max(np.abs(output))
@@ -706,9 +706,9 @@ def chop_and_rearrange(y, sr, beats, beats_per_chunk=2, n=1, m=1):
     chunks = []
     for i in range(0, len(beat_frames) - beats_per_chunk, beats_per_chunk * m):
         if (i // beats_per_chunk) % n == 0:
-        start = beat_frames[i]
-        end = beat_frames[i + beats_per_chunk]
-        chunks.append(y[start:end])
+            start = beat_frames[i]
+            end = beat_frames[i + beats_per_chunk]
+            chunks.append(y[start:end])
     
     if not chunks:
         return y
@@ -759,117 +759,6 @@ def parse_instructions(instructions):
         operations.append({'type': cmd_type, 'value': value})
 
     return operations
-
-class AudioHistory:
-    def __init__(self, max_size=50):
-        self.history = deque(maxlen=max_size)
-        self.current_index = -1
-        
-    def add(self, state, operations):
-        """Add a new state and its operations to history"""
-        # Remove any future states if we're not at the end
-        while len(self.history) > self.current_index + 1:
-            self.history.pop()
-            
-        # Change this line to append the state directly
-        self.history.append((state, operations))  # Removed .copy()
-        self.current_index = len(self.history) - 1
-        
-    def can_undo(self):
-        return self.current_index > 0
-        
-    def can_redo(self):
-        return self.current_index < len(self.history) - 1
-        
-    def undo(self):
-        """Move back one state"""
-        if self.can_undo():
-            self.current_index -= 1
-            return self.history[self.current_index]
-        return None
-        
-    def redo(self):
-        """Move forward one state"""
-        if self.can_redo():
-            self.current_index += 1
-            return self.history[self.current_index]
-        return None
-        
-    def current(self):
-        """Get current state"""
-        if self.current_index >= 0:
-            return self.history[self.current_index]
-        return None
-    
-    def get_operations_history(self):
-        """Get list of all operations up to current point"""
-        return [ops for _, ops in list(self.history)[:self.current_index + 1]]
-    
-    def apply_operations(self, y, operations):
-        """Apply audio operations"""
-        y_original = y.copy()
-        
-        # Detect BPM at the start
-        tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr)
-        beat_length = 60.0 / tempo  # Length of one beat in seconds
-        
-        for op in operations:
-            try:
-                if op['type'] == 'p':
-                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=op['value'])
-                elif op['type'] == 't':
-                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
-                elif op['type'] == 'r':
-                    rate = max(0.1, float(op['value']))
-                    target_sr = int(self.sr * rate)
-                    y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
-                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
-                elif op['type'] == 'rt':
-                    y = resample_time(y, self.sr, op['value'])
-                elif op['type'] == 'rev':
-                    y = reverse_by_beats(y, self.sr, beats, op['value'])
-                elif op['type'] == 'speed':
-                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
-                elif op['type'] == 'stut':
-                    y = add_stutter(y, self.sr, beats, rate=op['value'])
-                elif op['type'] == 'echo':
-                    delay = op['value'] if op['value'] > 0 else beat_length
-                    y = add_echo(y, self.sr, delay=delay, beats=beats)
-                elif op['type'] == 'loop':
-                    beats_per_loop = op['value'] if op['value'] > 0 else 4
-                    y = create_loop(y, self.sr, beats, beats_per_loop)
-                elif op['type'] == 'chop':
-                    beats_per_chunk = op['value'] if op['value'] > 0 else 2
-                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk)
-                elif op['type'] == 'mute':
-                    # Mute frequencies below threshold with drum decay
-                    y = apply_frequency_muting(y, self.sr, threshold_db=op['value'])
-                elif op['type'] == 'trig':
-                    # Trigger-based muting with adjustable sensitivity
-                    y = apply_trigger_muting(y, self.sr, sensitivity=op['value'], beats=beats)
-                elif op['type'] == 'n':
-                    threshold = op['value']
-                    preserve_ranges = [
-                        (80, 1200),    # Voice fundamental frequencies
-                        (2000, 4000)   # Voice harmonics and clarity
-                    ]
-                    y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
-        
-            except Exception as e:
-                print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
-                continue
-
-        preserve_ranges = [
-                        (80, 1200),    # Voice fundamental frequencies
-                        (2000, 4000)   # Voice harmonics and clarity
-                    ]
-        y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
-        # Match characteristics
-        y = match_frequency_profile(y, y_original, self.sr)
-        y = match_loudness(y, y_original, self.sr)
-        
-        return y
-
 
 def match_frequency_profile(modified, original, sr):
     """Match the frequency profile of the modified audio to the original using STFT"""
