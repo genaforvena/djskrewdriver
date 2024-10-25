@@ -473,11 +473,11 @@ class AudioProcessor:
     def apply_operations(self, y, operations):
         """Apply audio operations"""
         y_original = y.copy()
-        
+    
         # Detect BPM at the start
         tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr)
         beat_length = 60.0 / tempo  # Length of one beat in seconds
-        
+    
         for op in operations:
             try:
                 # Extract values with defaults
@@ -485,7 +485,7 @@ class AudioProcessor:
                 value1 = values[0] if len(values) > 0 else 1
                 value2 = values[1] if len(values) > 1 else 4
                 value3 = values[2] if len(values) > 2 else 1
-                
+            
                 if op['type'] == 'p':
                     y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=value1)
                 elif op['type'] == 't':
@@ -527,7 +527,9 @@ class AudioProcessor:
                     start_byte = int(value1)
                     num_bytes = int(value2)
                     y[start_byte:start_byte + num_bytes] = y[start_byte]
-        
+                elif op['type'] == 'mash':
+                    y = random_mix_beats(y, self.sr, beats, value1, value2, value3)
+    
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{values} failed: {str(e)}")
                 continue
@@ -540,7 +542,7 @@ class AudioProcessor:
         # Match characteristics
         y = match_frequency_profile(y, y_original, self.sr)
         y = match_loudness(y, y_original, self.sr)
-        
+    
         return y
 
 
@@ -746,7 +748,7 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Updated pattern to match the new format with any number of arguments
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]|mash):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -1058,3 +1060,37 @@ def main():
 if __name__ == "__main__":
     main()
 
+def random_mix_beats(y, sr, beats, num_parts, num_beats, repeat_interval):
+    """
+    Randomly mix parts of each beat divided by num_parts and do it every repeat_interval beats.
+    """
+    beat_frames = get_beat_frames(beats, sr)
+    output = np.zeros_like(y)
+    
+    for i in range(0, len(beat_frames) - num_beats, repeat_interval):
+        start = beat_frames[i]
+        end = beat_frames[i + num_beats]
+        segment = y[start:end]
+        
+        # Divide segment into parts
+        part_length = len(segment) // num_parts
+        parts = [segment[j*part_length:(j+1)*part_length] for j in range(num_parts)]
+        
+        # Randomly mix parts
+        np.random.shuffle(parts)
+        
+        # Reassemble segment
+        mixed_segment = np.concatenate(parts)
+        
+        # Apply crossfade
+        if i > 0:
+            crossfade_length = min(1024, len(mixed_segment))
+            fade_in = np.linspace(0, 1, crossfade_length)
+            fade_out = np.linspace(1, 0, crossfade_length)
+            output[start:start + crossfade_length] *= fade_in
+            output[start - crossfade_length:start] *= fade_out
+        
+        # Add mixed segment to output
+        output[start:end] = mixed_segment
+    
+    return output
