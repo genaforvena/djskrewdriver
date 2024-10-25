@@ -1,6 +1,5 @@
 import sys
 import threading
-import keyboard
 import time
 
 class InputHandler:
@@ -9,16 +8,9 @@ class InputHandler:
         self.processor = processor
         self.command_buffer = ""
         self.running = True
-        self.keyboard_thread = None
     
     def start(self):
-        """Start the input handler threads"""
-        # Start keyboard listener thread
-        self.keyboard_thread = threading.Thread(target=self._keyboard_listener)
-        self.keyboard_thread.daemon = True
-        self.keyboard_thread.start()
-        
-        # Start command processing loop
+        """Start the input handler"""
         try:
             while self.running:
                 command = input("> ").strip()
@@ -30,86 +22,27 @@ class InputHandler:
     def stop(self):
         """Stop the input handler"""
         self.running = False
-        if self.keyboard_thread:
-            self.keyboard_thread.join(timeout=1.0)
-    
-    def _keyboard_listener(self):
-        """Listen for keyboard events in a separate thread"""
-        try:
-            # Set up hotkeys
-            keyboard.on_press_key('space', lambda _: self.processor.playback.toggle_playback())
-            keyboard.on_press_key('up', lambda _: self._handle_playback_restart())
-            keyboard.on_press_key('left', lambda _: self._handle_history_navigation(-1))
-            keyboard.on_press_key('right', lambda _: self._handle_history_navigation(1))
-            
-            # Keep thread alive
-            while self.running:
-                time.sleep(0.1)
-        except Exception as e:
-            print(f"Keyboard listener error: {str(e)}")
-        finally:
-            keyboard.unhook_all()
     
     def _handle_command(self, command):
         """Process a command string"""
-        # Handle special commands
-        if command == 'q;':
-            self.running = False
-            return
-        
         # Process the command through the audio processor
         try:
             if not self.processor.process_instructions(command):
                 self.running = False
         except Exception as e:
             print(f"Error processing command: {str(e)}")
-    
-    def _handle_playback_restart(self):
-        """Handle playback restart"""
-        try:
-            self.processor.playback.reset_position()
-            self.processor.playback.start_playback()
-        except Exception as e:
-            print(f"Error restarting playback: {str(e)}")
-    
-    def _handle_history_navigation(self, direction):
-        """Handle history navigation (undo/redo)
-        direction: -1 for undo, 1 for redo"""
-        try:
-            if direction < 0 and self.processor.history.can_undo():
-                file_path, ops = self.processor.history.undo()
-            elif direction > 0 and self.processor.history.can_redo():
-                file_path, ops = self.processor.history.redo()
-            else:
-                return
-            
-            # Store playback state
-            was_playing = self.processor.playback.is_playing
-            position = self.processor.playback.current_position
-            
-            if was_playing:
-                self.processor.playback.pause_playback()
-            
-            # Update audio
-            if file_path:
-                self.processor.update_audio_state(file_path)
-                if was_playing:
-                    self.processor.playback.start_playback(position)
-                
-            self.processor.print_history_status()
-            
-        except Exception as e:
-            print(f"Error navigating history: {str(e)}")
 
 def print_controls():
     """Print available controls"""
     print("\nControls:")
-    print("Space: Play/Pause")
-    print("Up Arrow: Restart playback")
-    print("Left/Right Arrows: Navigate history")
-    print("Enter: Execute command")
-    print("s;: Save current version")
-    print("q;: Exit")
+    print("q; - Quit the program")
+    print("s; - Save current state")
+    print("a; - Apply changes")
+    print("p; - Toggle playback")
+    print("u; - Undo last operation")
+    print("r; - Redo last undone operation")
+    print("l; - Load a new audio file")
+    print("h; - Print this help message")
     print("\nCommand syntax:")
     print("command:value1:value2:value3;")
     print("Examples:")
