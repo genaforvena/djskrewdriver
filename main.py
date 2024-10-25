@@ -278,8 +278,13 @@ class AudioProcessor:
                     self.print_history_status()
                     
             elif key_event.name == 'enter':
-                if self.input_buffer.strip() == 'q;':
+                command = self.input_buffer.strip()
+                if command == 'q;':
                     return False
+                elif command == 's;':
+                    self.save_current_state()
+                    self.input_buffer = ""
+                    print("\n> ", end='', flush=True) 
                 if self.input_buffer.strip().endswith(';'):
                     instructions = self.input_buffer
                     self.input_buffer = ""
@@ -299,6 +304,53 @@ class AudioProcessor:
                 print(key_event.name, end='', flush=True)
         
         return True
+    
+    def save_current_state(self):
+        """Save the current state with operation history in filename"""
+        processed_dir = 'processed'
+        os.makedirs(processed_dir, exist_ok=True)
+
+        # Get base name without extension
+        base_name = os.path.splitext(os.path.basename(self.original_file))[0]
+        
+        # Get all operations up to current point
+        operations_history = []
+        for _, ops in list(self.history.history)[:self.history.current_index + 1]:
+            operations_history.extend(ops)
+        
+        # Create operations string for filename
+        if operations_history:
+            operations_str = "_".join([f"{op['type']}{op['value']}" for op in operations_history])
+        else:
+            operations_str = "no_ops"
+            
+        # Create timestamp
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        
+        # Create output filenames
+        if "processed_" in base_name:
+            base_name = base_name.split("_")
+            output_name = f'{base_name[0]}_{operations_str}_{timestamp}_{("_").join(base_name[2:])}'
+        else:
+            output_name = f'processed_{operations_str}_{timestamp}_{base_name}'
+            
+        output_wav_file = os.path.join(processed_dir, output_name + ".wav")
+        output_mp3_file = os.path.join(processed_dir, output_name + ".mp3")
+
+        try:
+            # Copy current working file
+            shutil.copy2(self.working_file, output_wav_file)
+            
+            # Convert to MP3
+            from pydub import AudioSegment
+            sound = AudioSegment.from_wav(output_wav_file)
+            sound.export(output_mp3_file, format="mp3")
+            
+            print(f"\nSaved WAV as: {output_wav_file}")
+            print(f"Saved MP3 as: {output_mp3_file}")
+            
+        except Exception as e:
+            print(f"\nError saving files: {str(e)}")
 
     def process_instructions(self, instructions):
         """Process instruction string"""
@@ -503,6 +555,7 @@ def print_controls():
     print("Up Arrow: Restart playback")
     print("Left/Right Arrows: Navigate history")
     print("Enter: New line (instructions must end with ;)")
+    print("s;: Save current version")
     print("q;: Exit")
     print("\nInstructions syntax:")
     print("p:<semitones>; for pitch shift")
