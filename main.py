@@ -811,7 +811,7 @@ class AudioHistory:
                 elif op['type'] == 'rev':
                     y = reverse_by_beats(y, self.sr, beats, op['value'])
                 elif op['type'] == 'speed':
-                    y = change_speed(y, self.sr, op['value'])
+                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
                 elif op['type'] == 'stut':
                     y = add_stutter(y, self.sr, beats, rate=op['value'])
                 elif op['type'] == 'echo':
