@@ -11,64 +11,8 @@ import time
 from yt_downloader import download_video
 from datetime import datetime
 from collections import deque
-
-class AudioPlayback:
-    def __init__(self, sr):
-        self.sr = sr
-        self.is_playing = False
-        self.current_position = 0
-        self.playback_thread = None
-        self.stream = None
-        
-    def play_callback(self, outdata, frames, time, status):
-        if status:
-            print(status)
-        
-        if self.current_position >= len(self.audio_data):
-            self.current_position = 0
-            raise sd.CallbackStop()
-            
-        if len(self.audio_data) - self.current_position < frames:
-            outdata[:len(self.audio_data) - self.current_position] = \
-                self.audio_data[self.current_position:].reshape(-1, 1)
-            outdata[len(self.audio_data) - self.current_position:] = 0
-            raise sd.CallbackStop()
-        else:
-            outdata[:] = self.audio_data[self.current_position:self.current_position + frames].reshape(-1, 1)
-            self.current_position += frames
-
-    def start_playback(self, audio_data, position=None):
-        if position is not None:
-            self.current_position = position
-        else:
-            self.current_position = 0
-            
-        self.audio_data = audio_data
-        
-        if self.stream is not None:
-            self.stream.close()
-            
-        self.stream = sd.OutputStream(
-            samplerate=self.sr,
-            channels=1,
-            callback=self.play_callback
-        )
-        self.stream.start()
-        self.is_playing = True
-
-    def pause_playback(self):
-        if self.stream is not None:
-            self.stream.close()
-            self.is_playing = False
-            
-    def toggle_playback(self, audio_data):
-        if self.is_playing:
-            self.pause_playback()
-        else:
-            self.start_playback(audio_data, self.current_position)
-
-    def reset_position(self):
-        self.current_position = 0
+import tempfile
+import shutil
 
 class AudioHistory:
     def __init__(self, max_size=50):
@@ -81,7 +25,386 @@ class AudioHistory:
         while len(self.history) > self.current_index + 1:
             self.history.pop()
             
-        self.history.append((state.copy(), operations))
+        # Change this line to append the state directly
+        self.history.append((state, operations))  # Removed .copy()
+        self.current_index = len(self.history) - 1
+        
+    def can_undo(self):
+        return self.current_index > 0
+        
+    def can_redo(self):
+        return self.current_index < len(self.history) - 1
+        
+    def undo(self):
+        """Move back one state"""
+        if self.can_undo():
+            self.current_index -= 1
+            return self.history[self.current_index]
+        return None
+        
+    def redo(self):
+        """Move forward one state"""
+        if self.can_redo():
+            self.current_index += 1
+            return self.history[self.current_index]
+        return None
+        
+    def current(self):
+        """Get current state"""
+        if self.current_index >= 0:
+            return self.history[self.current_index]
+        return None
+        
+    def get_operations_history(self):
+        """Get list of all operations up to current point"""
+        return [ops for _, ops in list(self.history)[:self.current_index + 1]]
+        
+    def cleanup(self):
+        """Remove all temporary files"""
+        for _, file_path in self.history:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except:
+                pass
+
+class AudioPlayback:
+    def __init__(self, file_path, sr):
+        self.sr = sr
+        self.is_playing = False
+        self.stream = None
+        self.audio_data = None
+        self.current_position = 0
+        self.load_audio(file_path)
+        
+    def load_audio(self, file_path):
+        """Load entire audio file into memory for playback"""
+        try:
+            # Explicitly load as float32 array
+            audio_data, sr = sf.read(file_path, dtype='float32')
+            
+            # Ensure audio is 2D array (samples x channels)
+            if len(audio_data.shape) == 1:
+                self.audio_data = audio_data.reshape(-1, 1)
+            else:
+                self.audio_data = audio_data
+                
+            # Keep current position if reloading while playing
+            if hasattr(self, 'current_position'):
+                self.current_position = min(self.current_position, len(self.audio_data))
+            else:
+                self.current_position = 0
+                
+        except Exception as e:
+            print(f"Error loading audio: {str(e)}")
+            self.audio_data = np.zeros((1024, 1), dtype='float32')  # Safe fallback
+            self.current_position = 0
+        
+    def play_callback(self, outdata, frames, time, status):
+        if status:
+            print(status)
+        
+        if self.audio_data is None or self.current_position >= len(self.audio_data):
+            self.current_position = 0
+            
+        try:
+            remaining = len(self.audio_data) - self.current_position
+            if remaining < frames:
+                # Handle end of file
+                outdata[:remaining] = self.audio_data[self.current_position:]
+                outdata[remaining:] = 0
+                self.current_position = 0
+            else:
+                outdata[:] = self.audio_data[self.current_position:self.current_position + frames]
+                self.current_position += frames
+        except Exception as e:
+            print(f"Playback error: {str(e)}")
+            outdata.fill(0)
+            
+    def start_playback(self, position=None):
+        if position is not None:
+            self.current_position = min(position, len(self.audio_data))
+            
+        if hasattr(self, 'stream') and self.stream is not None:
+            self.stream.close()
+            
+        try:
+            self.stream = sd.OutputStream(
+                samplerate=self.sr,
+                channels=self.audio_data.shape[1] if len(self.audio_data.shape) > 1 else 1,
+                callback=self.play_callback,
+                blocksize=2048,  # Larger block size for more stable playback
+                dtype=self.audio_data.dtype
+            )
+            self.stream.start()
+            self.is_playing = True
+        except Exception as e:
+            print(f"Error starting playback: {str(e)}")
+            self.is_playing = False
+
+    def pause_playback(self):
+        if hasattr(self, 'stream') and self.stream is not None:
+            try:
+                self.stream.close()
+                self.stream = None
+                self.is_playing = False
+            except Exception as e:
+                print(f"Error pausing playback: {str(e)}")
+            
+    def toggle_playback(self):
+        if self.is_playing:
+            self.pause_playback()
+        else:
+            self.start_playback(self.current_position)
+
+    def reset_position(self):
+        self.current_position = 0
+        if self.is_playing:
+            self.start_playback(0)
+
+
+class AudioProcessor:
+    def __init__(self, file_path):
+        self.original_file = file_path
+        self.temp_dir = tempfile.mkdtemp()
+        
+        # Load original audio
+        self.y, self.sr = librosa.load(file_path)
+        
+        # Save working copy
+        self.working_file = os.path.join(self.temp_dir, 'working.wav')
+        sf.write(self.working_file, self.y, self.sr)
+        
+        # Initialize playback with working file
+        self.playback = AudioPlayback(self.working_file, self.sr)
+        
+        # Initialize history and input buffer
+        self.history = AudioHistory()
+        self.history.add(self.working_file, [])
+        self.input_buffer = ""
+
+    def process_instructions(self, instructions):
+        instructions = instructions.strip()
+        if instructions == 'q;':
+            return False
+            
+        if not instructions.endswith(';'):
+            return True
+            
+        operations = parse_instructions(instructions)
+        if operations:
+            try:
+                # Store playback state
+                position = self.playback.current_position
+                was_playing = self.playback.is_playing
+                
+                if was_playing:
+                    self.playback.pause_playback()
+                
+                # Load current working file
+                y, sr = sf.read(self.working_file)
+                
+                # Apply operations
+                y = self.apply_operations(y, operations)
+                
+                # Save to new temporary file
+                temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
+                sf.write(temp_file, y, sr)
+                
+                # Add to history and update working file
+                self.history.add(temp_file, operations)
+                shutil.copy2(temp_file, self.working_file)
+                
+                # Update playback
+                self.playback.load_audio(self.working_file)
+                
+                # Restore playback state
+                if was_playing:
+                    self.playback.start_playback(position)
+                
+                print("\nOperations applied successfully")
+                
+            except Exception as e:
+                print(f"\nError processing audio: {str(e)}")
+        else:
+            print("\nNo valid instructions found. Please check your input.")
+            
+        return True
+
+    def process_input(self, key_event):
+        """Process input character by character"""
+        if key_event.event_type == 'down':
+            if key_event.name == 'space':
+                self.playback.toggle_playback()
+                    
+            elif key_event.name == 'up':
+                self.playback.reset_position()
+                self.playback.start_playback()
+                    
+            elif key_event.name == 'left' and self.history.can_undo():
+                file_path, ops = self.history.undo()
+                if file_path:
+                    # Store playback state
+                    position = self.playback.current_position
+                    was_playing = self.playback.is_playing
+                        
+                    if was_playing:
+                        self.playback.pause_playback()
+                        
+                    shutil.copy2(file_path, self.working_file)
+                    self.playback.load_audio(self.working_file)
+                        
+                    if was_playing:
+                        self.playback.start_playback(position)
+                        
+                    self.print_history_status()
+                    
+            elif key_event.name == 'right' and self.history.can_redo():
+                file_path, ops = self.history.redo()
+                if file_path:
+                    # Store playback state
+                    position = self.playback.current_position
+                    was_playing = self.playback.is_playing
+                        
+                    if was_playing:
+                        self.playback.pause_playback()
+                        
+                    shutil.copy2(file_path, self.working_file)
+                    self.playback.load_audio(self.working_file)
+                        
+                    if was_playing:
+                        self.playback.start_playback(position)
+                        
+                    self.print_history_status()
+                    
+            elif key_event.name == 'enter':
+                if self.input_buffer.strip() == 'q;':
+                    return False
+                if self.input_buffer.strip().endswith(';'):
+                    instructions = self.input_buffer
+                    self.input_buffer = ""
+                    print("\n> ", end='', flush=True)
+                    # Process instructions and continue regardless of result
+                    self.process_instructions(instructions)
+                else:
+                    print("\n> " + self.input_buffer, end='', flush=True)
+                    
+            elif key_event.name == 'backspace':
+                if self.input_buffer:
+                    self.input_buffer = self.input_buffer[:-1]
+                    print('\r> ' + self.input_buffer + ' \b', end='', flush=True)
+                    
+            elif len(key_event.name) == 1:
+                self.input_buffer += key_event.name
+                print(key_event.name, end='', flush=True)
+        
+        return True
+
+    def process_instructions(self, instructions):
+        """Process instruction string"""
+        instructions = instructions.strip()
+        if instructions == 'q;':
+            return False
+            
+        if not instructions.endswith(';'):
+            return True
+            
+        operations = parse_instructions(instructions)
+        if operations:
+            try:
+                # Store playback state
+                position = self.playback.current_position
+                was_playing = self.playback.is_playing
+                
+                if was_playing:
+                    self.playback.pause_playback()
+                
+                # Load current working file
+                y, sr = sf.read(self.working_file)
+                
+                # Apply operations
+                y = self.apply_operations(y, operations)
+                
+                # Save to new temporary file
+                temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
+                sf.write(temp_file, y, sr)
+                
+                # Add to history and update working file
+                self.history.add(temp_file, operations)
+                shutil.copy2(temp_file, self.working_file)
+                
+                # Update playback
+                self.playback.load_audio(self.working_file)
+                
+                # Restore playback state
+                if was_playing:
+                    self.playback.start_playback(position)
+                
+                print("\nOperations applied successfully")
+                
+            except Exception as e:
+                print(f"\nError processing audio: {str(e)}")
+        else:
+            print("\nNo valid instructions found. Please check your input.")
+            
+        return True
+
+    def cleanup(self):
+        """Clean up temporary files"""
+        # self.playback.pause_playback()  # Remove this line if not needed
+        try:
+            shutil.rmtree(self.temp_dir)
+        except Exception as e:
+            print(f"Error cleaning up temporary files: {str(e)}")
+
+    def apply_operations(self, y, operations):
+        """Apply audio operations"""
+        y_original = y.copy()
+        
+        for op in operations:
+            try:
+                if op['type'] == 'p':
+                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=op['value'])
+                elif op['type'] == 't':
+                    y = librosa.effects.time_stretch(y, rate=float(op['value']))
+                elif op['type'] == 'r':
+                    rate = max(0.1, float(op['value']))
+                    target_sr = int(self.sr * rate)
+                    y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
+                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
+                elif op['type'] == 'rt':
+                    y = resample_time(y, self.sr, op['value'])
+            except Exception as e:
+                print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
+                continue
+
+        # Match characteristics
+        y = match_frequency_profile(y, y_original, self.sr)
+        y = match_loudness(y, y_original, self.sr)
+        
+        return y
+
+    def print_history_status(self):
+        current = self.history.current_index + 1
+        total = len(self.history.history)
+        ops = self.history.current()[0]  # Operations are now first in tuple
+        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
+        print(f"\nState {current}/{total}: {ops_str}")
+        print("> " + self.input_buffer, end='', flush=True)
+
+class AudioHistory:
+    def __init__(self, max_size=50):
+        self.history = deque(maxlen=max_size)
+        self.current_index = -1
+        
+    def add(self, state, operations):
+        """Add a new state and its operations to history"""
+        # Remove any future states if we're not at the end
+        while len(self.history) > self.current_index + 1:
+            self.history.pop()
+            
+        # Change this line to append the state directly
+        self.history.append((state, operations))  # Removed .copy()
         self.current_index = len(self.history) - 1
         
     def can_undo(self):
@@ -114,207 +437,6 @@ class AudioHistory:
         """Get list of all operations up to current point"""
         return [ops for _, ops in list(self.history)[:self.current_index + 1]]
 
-
-class AudioProcessor:
-    def __init__(self, file_path):
-        self.original_file = file_path
-        self.y, self.sr = librosa.load(file_path)
-        self.original_y = self.y.copy()
-        self.current_y = self.y.copy()
-        self.history = AudioHistory()
-        self.history.add(self.original_y, [])
-        self.playback = AudioPlayback(self.sr)
-        self.input_buffer = ""
-        
-    def process_input(self, key_event):
-        """Process input character by character"""
-        if key_event.event_type == 'down':
-            if key_event.name == 'space':
-                self.playback.toggle_playback(self.current_y)
-                return True
-                
-            elif key_event.name == 'up':
-                self.playback.reset_position()
-                self.playback.start_playback(self.current_y)
-                return True
-                
-            elif key_event.name == 'left' and self.history.can_undo():
-                state, ops = self.history.undo()
-                self.current_y = state.copy()
-                self.print_history_status()
-                return True
-                
-            elif key_event.name == 'right' and self.history.can_redo():
-                state, ops = self.history.redo()
-                self.current_y = state.copy()
-                self.print_history_status()
-                return True
-                
-            elif key_event.name == 'enter':
-                # Only process if buffer ends with semicolon
-                if self.input_buffer.strip().endswith(';'):
-                    result = self.process_instructions(self.input_buffer)
-                    self.input_buffer = ""
-                    print("\n> ", end='', flush=True)
-                    return result
-                else:
-                    # Add newline if Enter without semicolon
-                    print("\n> " + self.input_buffer, end='', flush=True)
-                return True
-                
-            elif key_event.name == 'backspace':
-                if self.input_buffer:
-                    self.input_buffer = self.input_buffer[:-1]
-                    print('\r> ' + self.input_buffer + ' \b', end='', flush=True)
-                return True
-                
-            elif len(key_event.name) == 1:  # Single character
-                self.input_buffer += key_event.name
-                print(key_event.name, end='', flush=True)
-                return True
-                
-        return True
-
-    def process_instructions(self, instructions):
-        """Process instruction string"""
-        instructions = instructions.strip()
-        if instructions == 'q;':
-            return False
-            
-        if not instructions.endswith(';'):
-            return True
-            
-        operations = parse_instructions(instructions)
-        if operations:
-            try:
-                position = self.playback.current_position
-                was_playing = self.playback.is_playing
-                
-                self.current_y = self.apply_operations(self.current_y, operations)
-                self.history.add(self.current_y, operations)
-                
-                if was_playing:
-                    self.playback.start_playback(self.current_y, position)
-                    
-                print("\nOperations applied successfully")
-            except Exception as e:
-                print(f"\nError processing audio: {str(e)}")
-        else:
-            print("\nNo valid instructions found. Please check your input.")
-            
-        return True
-
-    def print_history_status(self):
-        """Print current position in history"""
-        current = self.history.current_index + 1
-        total = len(self.history.history)
-        ops = self.history.current()[1]
-        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
-        print(f"\nState {current}/{total}: {ops_str}")
-        print("> " + self.input_buffer, end='', flush=True) 
-
-    def play_audio(self, audio_data=None):
-        """Play the current or specified audio"""
-        if audio_data is None:
-            audio_data = self.current_y
-        
-        sd.stop()
-        sd.play(audio_data, self.sr)
-        print("Playing audio... Press 'q' to stop")
-        
-        try:
-            while sd.get_stream().active:
-                if keyboard.is_pressed('q'):
-                    sd.stop()
-                    print("Playback stopped")
-                    break
-        except KeyboardInterrupt:
-            sd.stop()
-            print("\nPlayback stopped")
-
-    def preview_operations(self, operations):
-        """Preview the result of operations without saving"""
-        temp_y = self.current_y.copy()
-        
-        try:
-            processed_y = self.apply_operations(temp_y, operations)
-            print("\nPlaying preview... Press 'q' to stop")
-            self.play_audio(processed_y)
-            
-            while True:
-                choice = input("\nDo you want to:\n1. Apply these changes\n2. Discard and try different operations\nChoice (1/2): ")
-                if choice == '1':
-                    self.current_y = processed_y
-                    self.history.add(self.current_y, operations)
-                    return True
-                elif choice == '2':
-                    return False
-                else:
-                    print("Invalid choice. Please enter 1 or 2.")
-        except Exception as e:
-            print(f"Preview failed: {str(e)}")
-            return False
-
-    def apply_operations(self, audio_data, operations):
-        """Apply audio operations to the given audio data"""
-        y = audio_data.copy()
-        y_original = audio_data.copy()
-
-        for op in operations:
-            try:
-                if op['type'] == 'p':
-                    y = pitch_shift(y, self.sr, op['value'])
-                elif op['type'] == 't':
-                    y = time_stretch(y, op['value'])
-                elif op['type'] == 'r':
-                    rate = max(0.1, float(op['value']))
-                    target_sr = int(self.sr * rate)
-                    y = resample(y, self.sr, target_sr)
-                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
-                elif op['type'] == 'rt':
-                    y = resample_time(y, self.sr, op['value'])
-            except Exception as e:
-                print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
-                continue
-
-        y = match_frequency_profile(y, y_original, self.sr)
-        y = match_loudness(y, y_original, self.sr)
-        
-        return y
-
-    def save_current(self):
-        """Save the current state of the audio"""
-        processed_dir = 'processed'
-        os.makedirs(processed_dir, exist_ok=True)
-
-        date_str = datetime.now().strftime("%Y%m%d%H%M%S")
-        base_name = os.path.splitext(os.path.basename(self.original_file))[0]
-        
-        # Get all operations up to current point
-        all_operations = []
-        for ops in self.history.get_operations_history():
-            all_operations.extend(ops)
-        
-        operations_str = "_".join([f"{op['type']}{op['value']}" for op in all_operations]) if all_operations else "no_ops"
-
-        if "processed_" in base_name:
-            base_name = base_name.split("_")
-            output_name = f'{base_name[0]}_{operations_str}_{("_").join(base_name[2:])}'
-        else:
-            output_name = f'processed_{operations_str}_{base_name}'
-
-        output_wav_file = os.path.join(processed_dir, output_name + ".wav")
-        output_mp3_file = os.path.join(processed_dir, output_name + ".mp3")
-
-        sf.write(output_wav_file, self.current_y, self.sr)
-        print(f"Processed audio (WAV) saved as {output_wav_file}")
-
-        from pydub import AudioSegment
-        sound = AudioSegment.from_wav(output_wav_file)
-        sound.export(output_mp3_file, format="mp3")
-        print(f"Processed audio (MP3) saved as {output_mp3_file}")
-
-        return output_wav_file
 
 def match_frequency_profile(modified, original, sr):
     """Match the frequency profile of the modified audio to the original using STFT"""
@@ -420,8 +542,9 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        processor.playback.pause_playback()
+        processor.cleanup()
         print("\nExiting...")
 
 if __name__ == "__main__":
     main()
+
