@@ -512,6 +512,8 @@ class AudioProcessor:
                         (2000, 4000)   # Voice harmonics and clarity
                     ]
                     y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
+                elif op['type'] == 'perc':
+                    y = extract_percussive_track(y, self.sr)
         
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
@@ -936,6 +938,51 @@ def apply_frequency_muting(y, sr, threshold_db=-40, frame_length=2048, hop_lengt
     
     return y_filtered
 
+def extract_percussive_track(y, sr):
+    """
+    Extract percussive components from the audio signal.
+    """
+    y_harmonic, y_percussive = librosa.effects.hpss(y)
+    return y_percussive
+    """
+    Mute frequencies below threshold with drum-like decay
+    threshold_db: threshold in dB below which to mute frequencies
+    """
+    # Compute STFT
+    D = librosa.stft(y, n_fft=frame_length, hop_length=hop_length)
+    
+    # Get magnitude and phase
+    mag, phase = librosa.magphase(D)
+    
+    # Convert to dB scale
+    mag_db = librosa.amplitude_to_db(mag)
+    
+    # Create mask based on threshold
+    mask = mag_db > threshold_db
+    
+    # Create a standard envelope for the frame length
+    frame_envelope = create_drum_envelope(frame_length//2 + 1, sr)  # match STFT frequency bins
+    
+    # For each time frame where we have frequencies above threshold
+    for frame in range(mask.shape[1]):
+        if np.any(mask[:, frame]):
+            # Apply envelope to the entire frequency range
+            mag[:, frame] = mag[:, frame] * frame_envelope
+            
+    # Apply threshold mask
+    mag = mag * mask
+    
+    # Reconstruct signal
+    y_filtered = librosa.istft(mag * phase, hop_length=hop_length)
+    
+    # Ensure output length matches input
+    if len(y_filtered) > len(y):
+        y_filtered = y_filtered[:len(y)]
+    elif len(y_filtered) < len(y):
+        y_filtered = np.pad(y_filtered, (0, len(y) - len(y_filtered)))
+    
+    return y_filtered
+
 def create_drum_envelope(length, sr, decay=0.1):
     """
     Create a drum-like decay envelope
@@ -1007,7 +1054,7 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Added mute and trig to the pattern
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|[ptr]):(-?\d*[.,]?\d+);?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|[ptr]):(-?\d*[.,]?\d+);?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -1031,6 +1078,7 @@ def print_controls():
     print("t:<rate>; for time stretch")
     print("r:<rate>; for resampling")
     print("rt:<rate>; for time stretch using resampling")
+    print("perc:; for percussive track extraction")
     print("\nRates: 1.0 = normal, 2.0 = double speed, 0.5 = half speed")
     print("Example: p:2;rt:0.75;")
     print("\nNote: All instructions must end with a semicolon (;)")
