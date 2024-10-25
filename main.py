@@ -583,26 +583,26 @@ def add_stutter(y, sr, beats, rate=1.0, n=1, m=1):
     # Add stutters at beat positions
     for i in range(0, len(beat_frames) - 1, m):
         if (i // m) % n == 0:
-        beat_start = beat_frames[i]
-        beat_end = beat_frames[i + 1]
-        beat_length = beat_end - beat_start
-        
-        # Number of stutters for this beat
-        num_stutters = int(rate)
-        if num_stutters > 0:
-            stutter_length = beat_length // num_stutters
+            beat_start = beat_frames[i]
+            beat_end = beat_frames[i + 1]
+            beat_length = beat_end - beat_start
             
-            for j in range(num_stutters):
-                # Get segment to repeat
-                segment_start = beat_start + (j * stutter_length)
-                segment = y[segment_start:segment_start + stutter_length]
+            # Number of stutters for this beat
+            num_stutters = int(rate)
+            if num_stutters > 0:
+                stutter_length = beat_length // num_stutters
                 
-                # Apply fade envelope
-                fade = np.linspace(1.0, 0.0, len(segment)) ** 2
-                
-                # Add stuttered segment
-                if segment_start + len(segment) <= len(output):
-                    output[segment_start:segment_start + len(segment)] += segment * fade
+                for j in range(num_stutters):
+                    # Get segment to repeat
+                    segment_start = beat_start + (j * stutter_length)
+                    segment = y[segment_start:segment_start + stutter_length]
+                    
+                    # Apply fade envelope
+                    fade = np.linspace(1.0, 0.0, len(segment)) ** 2
+                    
+                    # Add stuttered segment
+                    if segment_start + len(segment) <= len(output):
+                        output[segment_start:segment_start + len(segment)] += segment * fade
     
     # Normalize
     output = output / np.max(np.abs(output))
