@@ -97,3 +97,4 @@ Pipfile
 
 # Ignore processed audio files
 processed/
+.aider*
