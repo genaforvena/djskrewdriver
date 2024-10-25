@@ -230,13 +230,25 @@ class AudioProcessor:
     def process_instructions(self, instructions):
         """Process instruction string"""
         instructions = instructions.strip()
+        print(f"Processing instructions: '{instructions}'")  # Debugging line
+
+        # Check for exit command
         if instructions == 'q;':
-            return False
-            
+            return False  # Exit the program
+
+        # Check for save command
+        elif instructions == 's;':
+            self.save_current_state()  # Save the current state
+            print("\nCurrent state saved.")
+            return True  # Continue processing instructions
+
+        # Check for incomplete instruction
         if not instructions.endswith(';'):
-            return True
-            
-        operations = parse_instructions(instructions)
+            print("Incomplete instruction.")  # Debugging line
+            return True  # Continue processing if not a complete instruction
+
+        # Parse and process other operations
+        operations = self.parse_instructions(instructions)
         if operations:
             try:
                 # Store playback state
@@ -246,10 +258,31 @@ class AudioProcessor:
                 if was_playing:
                     self.playback.pause_playback()
                 
+                # Process each operation
+                for operation in operations:
+                    if operation['type'] == 'revert':
+                        steps = int(operation['values'][0])  # Get the number of steps
+                        if steps > 0 and self.history.can_undo():
+                            for _ in range(steps):
+                                file_path, ops = self.history.undo()
+                                if file_path:
+                                    # Load the previous state
+                                    shutil.copy2(file_path, self.working_file)
+                                    self.playback.load_audio(self.working_file)
+                        elif steps < 0 and self.history.can_redo():
+                            for _ in range(-steps):
+                                file_path, ops = self.history.redo()
+                                if file_path:
+                                    # Load the next state
+                                    shutil.copy2(file_path, self.working_file)
+                                    self.playback.load_audio(self.working_file)
+                        self.print_history_status()
+                        return  # Exit the function instead of continuing a loop
+
                 # Load current working file
                 y, sr = sf.read(self.working_file)
                 
-                # Apply operations
+                # Apply other operations
                 y = self.apply_operations(y, operations)
                 
                 # Save to new temporary file
@@ -274,7 +307,7 @@ class AudioProcessor:
         else:
             print("\nNo valid instructions found. Please check your input.")
             
-        return True
+        return True  # Continue processing
 
     def process_input(self, key_event):
         """Process input character by character"""
@@ -286,56 +319,44 @@ class AudioProcessor:
                 self.playback.reset_position()
                 self.playback.start_playback()
                     
-            elif key_event.name == 'left' and self.history.can_undo():
-                file_path, ops = self.history.undo()
-                if file_path:
-                    # Store playback state
-                    position = self.playback.current_position
-                    was_playing = self.playback.is_playing
-                        
-                    if was_playing:
-                        self.playback.pause_playback()
-                        
-                    shutil.copy2(file_path, self.working_file)
-                    self.playback.load_audio(self.working_file)
-                        
-                    if was_playing:
-                        self.playback.start_playback(position)
-                        
-                    self.print_history_status()
-                    
-            elif key_event.name == 'right' and self.history.can_redo():
-                file_path, ops = self.history.redo()
-                if file_path:
-                    # Store playback state
-                    position = self.playback.current_position
-                    was_playing = self.playback.is_playing
-                        
-                    if was_playing:
-                        self.playback.pause_playback()
-                        
-                    shutil.copy2(file_path, self.working_file)
-                    self.playback.load_audio(self.working_file)
-                        
-                    if was_playing:
-                        self.playback.start_playback(position)
-                        
-                    self.print_history_status()
-                    
             elif key_event.name == 'enter':
                 command = self.input_buffer.strip()
-                if command == 'q;':
-                    return False
-                elif command == 's;':
-                    self.save_current_state()
-                    self.input_buffer = ""
-                    print("\n> ", end='', flush=True) 
+                if command.startswith('revert:'):
+                    steps = int(command.split(':')[1])  # Get the number of steps
+                    if steps > 0 and self.history.can_undo():
+                        for _ in range(steps):
+                            file_path, ops = self.history.undo()
+                            if file_path:
+                                # Load the previous state
+                                shutil.copy2(file_path, self.working_file)
+                                self.playback.load_audio(self.working_file)
+                    elif steps < 0 and self.history.can_redo():
+                        for _ in range(-steps):
+                            file_path, ops = self.history.redo()
+                            if file_path:
+                                # Load the next state
+                                shutil.copy2(file_path, self.working_file)
+                                self.playback.load_audio(self.working_file)
+                    self.print_history_status()
+                    return  # Exit the function instead of continuing a loop
+
+                elif command.startswith('select:'):
+                    index = int(command.split(':')[1])  # Get the index to select
+                    if 0 <= index < len(self.history.history):
+                        file_path, ops = self.history.history[index]
+                        self.input_buffer = f"revert:{index};"  # Prepare the revert command
+                        print(f"\nSelected history index {index}: {file_path}")
+                    else:
+                        print("Invalid index. Please try again.")
+                    print("\n> ", end='', flush=True)
                 if self.input_buffer.strip().endswith(';'):
                     instructions = self.input_buffer
                     self.input_buffer = ""
                     print("\n> ", end='', flush=True)
                     # Process instructions and continue regardless of result
-                    self.process_instructions(instructions)
+                    stop = self.process_instructions(instructions)
+                    if stop:
+                        return True
                 else:
                     print("\n> " + self.input_buffer, end='', flush=True)
                     
@@ -402,55 +423,6 @@ class AudioProcessor:
             
         except Exception as e:
             print(f"\nError saving files: {str(e)}")
-
-    def process_instructions(self, instructions):
-        """Process instruction string"""
-        instructions = instructions.strip()
-        if instructions == 'q;':
-            return False
-            
-        if not instructions.endswith(';'):
-            return True
-            
-        operations = parse_instructions(instructions)
-        if operations:
-            try:
-                # Store playback state
-                position = self.playback.current_position
-                was_playing = self.playback.is_playing
-                
-                if was_playing:
-                    self.playback.pause_playback()
-                
-                # Load current working file
-                y, sr = sf.read(self.working_file)
-                
-                # Apply operations
-                y = self.apply_operations(y, operations)
-                
-                # Save to new temporary file
-                temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
-                sf.write(temp_file, y, sr)
-                
-                # Add to history and update working file
-                self.history.add(temp_file, operations)
-                shutil.copy2(temp_file, self.working_file)
-                
-                # Update playback
-                self.playback.load_audio(self.working_file)
-                
-                # Restore playback state
-                if was_playing:
-                    self.playback.start_playback(position)
-                
-                print("\nOperations applied successfully")
-                
-            except Exception as e:
-                print(f"\nError processing audio: {str(e)}")
-        else:
-            print("\nNo valid instructions found. Please check your input.")
-            
-        return True
 
     def cleanup(self):
         """Clean up temporary files"""
@@ -544,6 +516,22 @@ class AudioProcessor:
         y = match_loudness(y, y_original, self.sr)
     
         return y
+
+    def parse_instructions(self, instructions):
+        """Parse the instruction string into operations"""
+        operations = []
+        # Updated pattern to match the new format with any number of arguments
+        pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]|mash|revert):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
+        matches = re.finditer(pattern, instructions)
+
+        for match in matches:
+            if match.groups() and len(match.groups()) >= 2:
+                cmd_type, args = match.groups()[:2]  # Ensure we only take the first two groups
+                args = args.split(':')[:-1]  # Remove the last empty string
+                values = [float(arg.replace(',', '.')) for arg in args]
+                operations.append({'type': cmd_type, 'values': values})  # Changed 'value' to 'values'
+
+        return operations
 
 
 def get_beat_frames(beats, sr, hop_length=512):
@@ -751,7 +739,7 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Updated pattern to match the new format with any number of arguments
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]|mash):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]|mash|revert):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -998,7 +986,7 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Updated pattern to match the new format with any number of arguments
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
+    pattern = r"(mute|s|q|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
@@ -1109,7 +1097,8 @@ def main():
     try:
         while True:
             event = keyboard.read_event(suppress=True)
-            if not processor.process_input(event):
+            stop = processor.process_input(event)
+            if stop is False:  # Check if the return value indicates to exit
                 break
     except KeyboardInterrupt:
         pass
@@ -1119,3 +1108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
