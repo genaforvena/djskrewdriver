@@ -282,8 +282,14 @@ def print_controls():
     print("\nNote: All instructions must end with a semicolon (;)")
 
 def too_long_name_truncation(name, max_length=255):
-    """Truncate the name to a maximum length."""
-    return name[:max_length]  # Truncate to max_length
+    """Truncate the name to a maximum length, preserving start and end."""
+    if len(name) > max_length:
+        # Calculate how much of the start and end to keep
+        part_length = (max_length - 3) // 2  # Subtract 3 for the ellipsis
+        start = name[:part_length]
+        end = name[-part_length:]
+        return f"{start}...{end}"
+    return name
 
 def main():
     # Load audio file
