@@ -153,4 +153,9 @@ Beat-Synchronized Effects:
 - Automatic BPM detection for rhythmically coherent effects
 - Uses FFT-based analysis to maintain spectral characteristics
 - Implements spectrogram matching for frequency preservation
-- Preserves
+- Preserves original loudness levels through RMS matching
+- Creates unique artifacts through multiple processing iterations
+- Beat-synchronized effects for musically coherent modifications
+- Perfect for experimental sound design and audio research
+
+[Contributing and License sections remain the same...]
