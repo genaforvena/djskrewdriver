@@ -1109,7 +1109,8 @@ def main():
 
     try:
         while True:
-            event = keyboard.read_event(suppress=True)
+            time.sleep(5)  # Use time.sleep instead of sleep
+            event = keyboard.read_event()
             cont = processor.process_input(event)
             if not cont:  # Check if the return value indicates to exit
                 break
