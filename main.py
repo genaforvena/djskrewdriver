@@ -569,6 +569,7 @@ def add_stutter(y, sr, beats, value1, value2, value3):
             beat_length = beat_end - beat_start
             
             # Number of stutters for this beat
+            rate = value1  # Define rate as value1
             num_stutters = int(rate)
             if num_stutters > 0:
                 stutter_length = beat_length // num_stutters
@@ -594,6 +595,8 @@ def add_echo(y, sr, delay, beats, value1, value2, value3):
     Add echo effect synchronized with beats
     delay: echo delay in seconds (if 0, uses one beat length)
     """
+    decay = 0.5  # Define decay as a constant value
+    
     if delay <= 0:
         if len(beats) >= 2:
             # Use average beat length for delay
