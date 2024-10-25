@@ -538,7 +538,7 @@ def get_beat_frames(beats, sr, hop_length=512):
     """Convert beat positions to frame indices"""
     return librosa.frames_to_samples(beats, hop_length=hop_length)
 
-def reverse_by_beats(y, sr, beats, num_beats=4):
+def reverse_by_beats(y, sr, beats, num_beats=4, n=1, m=1):
     """
     Reverse audio in chunks of specified beats
     num_beats: number of beats per reversed chunk
@@ -550,7 +550,8 @@ def reverse_by_beats(y, sr, beats, num_beats=4):
     output = np.zeros_like(y)
     
     # Process in chunks of num_beats
-    for i in range(0, len(beat_frames) - num_beats, num_beats):
+    for i in range(0, len(beat_frames) - num_beats, num_beats * m):
+        if (i // num_beats) % n == 0:
         start = beat_frames[i]
         end = beat_frames[i + num_beats] if i + num_beats < len(beat_frames) else len(y)
         
@@ -568,7 +569,7 @@ def reverse_by_beats(y, sr, beats, num_beats=4):
     
     return output
 
-def add_stutter(y, sr, beats, rate=1.0):
+def add_stutter(y, sr, beats, rate=1.0, n=1, m=1):
     """
     Add stutter effect synchronized with beats
     rate: number of stutters per beat (1.0 = one stutter per beat)
@@ -580,7 +581,8 @@ def add_stutter(y, sr, beats, rate=1.0):
     output[:] = y[:]
     
     # Add stutters at beat positions
-    for i in range(len(beat_frames) - 1):
+    for i in range(0, len(beat_frames) - 1, m):
+        if (i // m) % n == 0:
         beat_start = beat_frames[i]
         beat_end = beat_frames[i + 1]
         beat_length = beat_end - beat_start
@@ -606,7 +608,7 @@ def add_stutter(y, sr, beats, rate=1.0):
     output = output / np.max(np.abs(output))
     return output
 
-def add_echo(y, sr, delay, beats, decay=0.5):
+def add_echo(y, sr, delay, beats, decay=0.5, n=1, m=1):
     """
     Add echo effect synchronized with beats
     delay: echo delay in seconds (if 0, uses one beat length)
@@ -631,6 +633,7 @@ def add_echo(y, sr, delay, beats, decay=0.5):
     
     # Add multiple echoes
     for i in range(1, 4):  # Add 3 echoes with decreasing volume
+        if (i // m) % n == 0:
         echo_delay = delay_samples * i
         if echo_delay + len(y) <= len(output):
             output[echo_delay:echo_delay + len(y)] += y * (decay ** i)
@@ -642,7 +645,7 @@ def add_echo(y, sr, delay, beats, decay=0.5):
     output = output / np.max(np.abs(output))
     return output
 
-def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5):
+def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5, n=1, m=1):
     """
     Create loops synchronized with beats
     beats_per_loop: number of beats per loop
@@ -657,7 +660,8 @@ def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5):
     output = np.zeros_like(y)
     
     # Loop through beats and create loops
-    for i in range(len(beat_frames) - 1):
+    for i in range(0, len(beat_frames) - 1, m):
+        if (i // m) % n == 0:
         start = beat_frames[i]
         end = beat_frames[i + 1]
         beat_length = end - start
@@ -688,7 +692,7 @@ def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5):
     output = output / np.max(np.abs(output))
     return output
 
-def chop_and_rearrange(y, sr, beats, beats_per_chunk=2):
+def chop_and_rearrange(y, sr, beats, beats_per_chunk=2, n=1, m=1):
     """
     Chop audio into beat-sized chunks and rearrange them
     beats_per_chunk: number of beats per chunk
@@ -700,7 +704,8 @@ def chop_and_rearrange(y, sr, beats, beats_per_chunk=2):
         
     # Create chunks
     chunks = []
-    for i in range(0, len(beat_frames) - beats_per_chunk, beats_per_chunk):
+    for i in range(0, len(beat_frames) - beats_per_chunk, beats_per_chunk * m):
+        if (i // beats_per_chunk) % n == 0:
         start = beat_frames[i]
         end = beat_frames[i + beats_per_chunk]
         chunks.append(y[start:end])
@@ -1101,17 +1106,25 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Added mute and trig to the pattern
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+)(?::(-?\d*[.,]?\d+))?;?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+)(?::(-?\d*[.,]?\d+))?(?::(-?\d*[.,]?\d+))?(?::(-?\d*[.,]?\d+))?;?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        cmd_type, value, value2 = match.groups()
+        cmd_type, value, value2, n, m = match.groups()
         value = float(value.replace(',', '.'))
         if value2:
             value2 = float(value2.replace(',', '.'))
         else:
             value2 = None
-        operations.append({'type': cmd_type, 'value': value, 'value2': value2})
+        if n:
+            n = int(n.replace(',', '.'))
+        else:
+            n = 1
+        if m:
+            m = int(m.replace(',', '.'))
+        else:
+            m = 1
+        operations.append({'type': cmd_type, 'value': value, 'value2': value2, 'n': n, 'm': m})
 
     return operations
 
