@@ -353,7 +353,7 @@ class AudioProcessor:
     def save_current_state(self):
         """Save the current state with operation history in filename"""
         processed_dir = 'processed'
-        os.makedirs(processed_dir, exist_ok=True)
+        os.makedirs(processed_dir, exist_ok=True)  # Ensure the directory exists
 
         # Get base name without extension
         base_name = os.path.splitext(os.path.basename(self.original_file))[0]
@@ -379,6 +379,12 @@ class AudioProcessor:
         else:
             output_name = f'processed_{operations_str}_{timestamp}_{base_name}'
             
+        # Sanitize the output name to avoid invalid characters
+        output_name = ''.join(c for c in output_name if c.isalnum() or c in ('_', '-'))  # Keep only valid characters
+
+        # Truncate the output name if it's too long
+        output_name = too_long_name_truncation(output_name)
+
         output_wav_file = os.path.join(processed_dir, output_name + ".wav")
         output_mp3_file = os.path.join(processed_dir, output_name + ".mp3")
 
@@ -1012,6 +1018,10 @@ def print_controls():
     print("command:number:number:number;")
     print("Example: p:2:1:3; for pitch shift with arguments 2, 1, and 3")
     print("\nNote: All instructions must end with a semicolon (;)")
+
+def too_long_name_truncation(name, max_length=255):
+    """Truncate the name to a maximum length."""
+    return name[:max_length]  # Truncate to max_length
 
 def main():
     if len(sys.argv) > 1:
