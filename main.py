@@ -183,6 +183,50 @@ class AudioProcessor:
         self.history.add(self.working_file, [])
         self.input_buffer = ""
 
+
+    def spectral_gate(self, y, sr, threshold_db=-50, preserve_freq_ranges=None):
+        """
+        Apply spectral gating to remove noise while preserving specific frequency ranges.
+        
+        Parameters:
+        y (np.ndarray): Input audio signal
+        sr (int): Sample rate
+        threshold_db (float): Threshold in dB below which to gate frequencies
+        preserve_freq_ranges (list): List of tuples of (min_freq, max_freq) to preserve
+        """
+        import librosa
+        import numpy as np
+        
+        # Compute STFT
+        D = librosa.stft(y)
+        mag, phase = librosa.magphase(D)
+        
+        # Convert to dB scale
+        mag_db = librosa.amplitude_to_db(mag)
+        
+        # Create a mask based on threshold
+        mask = mag_db > threshold_db
+        
+        # If there are frequency ranges to preserve
+        if preserve_freq_ranges:
+            # Get frequency values for each bin
+            freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
+            
+            # For each range to preserve
+            for min_freq, max_freq in preserve_freq_ranges:
+                # Find bins in the preserve range
+                preserve_mask = (freqs >= min_freq) & (freqs <= max_freq)
+                # Add these bins to the mask
+                mask[preserve_mask] = True
+        
+        # Apply the mask
+        mag_filtered = mag * mask
+        
+        # Reconstruct signal
+        y_filtered = librosa.istft(mag_filtered * phase)
+        
+        return y_filtered
+
     def process_instructions(self, instructions):
         instructions = instructions.strip()
         if instructions == 'q;':
@@ -426,10 +470,24 @@ class AudioProcessor:
                     y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
                 elif op['type'] == 'rt':
                     y = resample_time(y, self.sr, op['value'])
+                elif op['type'] == 'n':  # New noise filter operation
+                    threshold = op['value']
+                    # Example preserve ranges (can be customized)
+                    preserve_ranges = [
+                        (80, 1200),    # Voice fundamental frequencies
+                        (2000, 4000)   # Voice harmonics and clarity
+                    ]
+                    y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
+        
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
                 continue
-
+ 
+        preserve_ranges = [
+                        (80, 1200),    # Voice fundamental frequencies
+                        (2000, 4000)   # Voice harmonics and clarity
+                    ]
+        y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
         # Match characteristics
         y = match_frequency_profile(y, y_original, self.sr)
         y = match_loudness(y, y_original, self.sr)
