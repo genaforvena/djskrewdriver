@@ -310,16 +310,13 @@ class AudioProcessor:
         return True  # Continue processing
 
     def process_input(self, key_event):
-        """Process input character by character"""
-        if len(key_event.name) == 1:
-            self.input_buffer += key_event.name
-
+        """Process input and wait for Enter key press"""
         if key_event.event_type == 'down':
             if key_event.name == 'space':
                 self.playback.toggle_playback()
             elif key_event.name == 'enter':
-                if self.input_buffer.endswith(';'):
-                    command = self.input_buffer
+                command = self.input_buffer.strip()
+                if command:
                     # Process the command
                     operations = self.parse_instructions(command)
                     if operations:
@@ -380,8 +377,8 @@ class AudioProcessor:
                     else:
                         print("\nNo valid instructions found. Please check your input.")
                 
-                    self.input_buffer = ""  # Clear the input buffer
-                    print("\n> ", end='', flush=True)
+                self.input_buffer = ""  # Clear the input buffer
+                print("\n> ", end='', flush=True)
 
 
 
