@@ -485,20 +485,20 @@ class AudioProcessor:
                 elif op['type'] == 'rt':
                     y = resample_time(y, self.sr, op['value'])
                 elif op['type'] == 'rev':
-                    y = reverse_by_beats(y, self.sr, beats, op['value'])
+                    y = reverse_by_beats(y, self.sr, beats, op['value'], op['n'], op['m'])
                 elif op['type'] == 'speed':
                     y = librosa.effects.time_stretch(y, rate=float(op['value']))
                 elif op['type'] == 'stut':
-                    y = add_stutter(y, self.sr, beats, rate=op['value'])
+                    y = add_stutter(y, self.sr, beats, rate=op['value'], n=op['n'], m=op['m'])
                 elif op['type'] == 'echo':
                     delay = op['value'] if op['value'] > 0 else beat_length
-                    y = add_echo(y, self.sr, delay=delay, beats=beats)
+                    y = add_echo(y, self.sr, delay=delay, beats=beats, n=op['n'], m=op['m'])
                 elif op['type'] == 'loop':
                     beats_per_loop = op['value'] if op['value'] > 0 else 4
-                    y = create_loop(y, self.sr, beats, beats_per_loop)
+                    y = create_loop(y, self.sr, beats, beats_per_loop, n=op['n'], m=op['m'])
                 elif op['type'] == 'chop':
                     beats_per_chunk = op['value'] if op['value'] > 0 else 2
-                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk)
+                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk, n=op['n'], m=op['m'])
                 elif op['type'] == 'mute':
                     # Mute frequencies below threshold with drum decay
                     y = apply_frequency_muting(y, self.sr, threshold_db=op['value'])
