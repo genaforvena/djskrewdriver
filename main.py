@@ -634,9 +634,9 @@ def add_echo(y, sr, delay, beats, decay=0.5, n=1, m=1):
     # Add multiple echoes
     for i in range(1, 4):  # Add 3 echoes with decreasing volume
         if (i // m) % n == 0:
-        echo_delay = delay_samples * i
-        if echo_delay + len(y) <= len(output):
-            output[echo_delay:echo_delay + len(y)] += y * (decay ** i)
+            echo_delay = delay_samples * i
+            if echo_delay + len(y) <= len(output):
+                output[echo_delay:echo_delay + len(y)] += y * (decay ** i)
     
     # Trim to original length
     output = output[:len(y)]
