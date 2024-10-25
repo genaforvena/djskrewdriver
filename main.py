@@ -994,16 +994,15 @@ def apply_trigger_muting(y, sr, sensitivity=0.5, beats=None, frame_length=2048, 
 def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
-    # Added mute and trig to the pattern
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+):(-?\d*[.,]?\d+):(-?\d*[.,]?\d+);?"
+    # Updated pattern to match the new format with any number of arguments
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        cmd_type, value1, value2, value3 = match.groups()
-        value1 = float(value1.replace(',', '.'))
-        value2 = float(value2.replace(',', '.'))
-        value3 = float(value3.replace(',', '.'))
-        operations.append({'type': cmd_type, 'value1': value1, 'value2': value2, 'value3': value3})
+        cmd_type, args = match.groups()
+        args = args.split(':')[:-1]  # Remove the last empty string
+        values = [float(arg.replace(',', '.')) for arg in args]
+        operations.append({'type': cmd_type, 'values': values})
 
     return operations
 
