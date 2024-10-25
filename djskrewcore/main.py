@@ -161,7 +161,9 @@ class AudioPlayback:
 
 
 class AudioProcessor:
-    def __init__(self, file_path):
+    def __init__(self, file_path, config_file='commands.txt'):
+        self.config_file = config_file
+        self.commands = self.load_commands()
         self.original_file = file_path
         self.temp_dir = tempfile.mkdtemp()
         
@@ -179,6 +181,20 @@ class AudioProcessor:
         self.history = AudioHistory()
         self.history.add(self.working_file, [])
         self.input_buffer = ""
+
+    def load_commands(self):
+        """Load commands from the configuration file"""
+        commands = {}
+        try:
+            with open(self.config_file, 'r') as file:
+                for line in file:
+                    parts = line.strip().split(';')
+                    if len(parts) == 2:
+                        command_name, command_value = parts
+                        commands[command_name] = command_value
+        except FileNotFoundError:
+            print(f"Config file '{self.config_file}' not found. No custom commands loaded.")
+        return commands
 
 
     def spectral_gate(self, y, sr, threshold_db=-50, preserve_freq_ranges=None):
@@ -400,6 +416,10 @@ class AudioProcessor:
         while True:
             command = input("> ").strip()
             if command:
+                # Check if the command is a configurable command
+                if command in self.commands:
+                    command = self.commands[command]
+                
                 # Split the command into individual instructions
                 instructions = command.split(';')
                 for instruction in instructions:
