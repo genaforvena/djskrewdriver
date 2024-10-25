@@ -160,6 +160,71 @@ class AudioPlayback:
             self.start_playback(0)
 
 
+# Standalone audio processing functions
+def pitch_shift(y, sr, n_steps):
+    return librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+
+def time_stretch(y, rate):
+    return librosa.effects.time_stretch(y, rate=rate)
+
+def resample_audio(y, sr, rate):
+    target_sr = int(sr * rate)
+    y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+    return librosa.resample(y, orig_sr=target_sr, target_sr=sr)
+
+def reverse_by_beats(y, sr, beats, value1, value2, value3):
+    # Implement the reverse logic here
+    pass
+
+def add_stutter(y, sr, beats, value1, value2, value3):
+    # Implement the stutter logic here
+    pass
+
+def add_echo(y, sr, delay, beats, value1, value2, value3):
+    # Implement the echo logic here
+    pass
+
+def create_loop(y, sr, beats, value1, value2, value3):
+    # Implement the loop logic here
+    pass
+
+def chop_and_rearrange(y, sr, beats, value1, value2, value3):
+    # Implement the chop logic here
+    pass
+
+def apply_frequency_muting(y, sr, threshold_db):
+    # Implement the frequency muting logic here
+    pass
+
+def apply_trigger_muting(y, sr, sensitivity, beats):
+    # Implement the trigger muting logic here
+    pass
+
+def delete_beat_parts(y, sr, beats, value1, value2, value3):
+    # Implement the delete logic here
+    pass
+
+def extract_percussive_track(y, sr):
+    # Implement the percussive track extraction logic here
+    pass
+
+def random_mix_beats(y, sr, beats, value1, value2, value3):
+    # Implement the random mix logic here
+    pass
+
+def spectral_gate(y, sr, threshold_db, preserve_freq_ranges):
+    # Implement the spectral gate logic here
+    pass
+
+def match_frequency_profile(y, y_original, sr):
+    # Implement the frequency profile matching logic here
+    pass
+
+def match_loudness(y, y_original, sr):
+    # Implement the loudness matching logic here
+    pass
+
+# AudioProcessor class
 class AudioProcessor:
     def __init__(self, file_path, config_file='commands.txt'):
         self.config_file = config_file
@@ -196,50 +261,6 @@ class AudioProcessor:
             print(f"Config file '{self.config_file}' not found. No custom commands loaded.")
         return commands
 
-
-    def spectral_gate(self, y, sr, threshold_db=-50, preserve_freq_ranges=None):
-        """
-        Apply spectral gating to remove noise while preserving specific frequency ranges.
-        
-        Parameters:
-        y (np.ndarray): Input audio signal
-        sr (int): Sample rate
-        threshold_db (float): Threshold in dB below which to gate frequencies
-        preserve_freq_ranges (list): List of tuples of (min_freq, max_freq) to preserve
-        """
-        import librosa
-        import numpy as np
-        
-        # Compute STFT
-        D = librosa.stft(y)
-        mag, phase = librosa.magphase(D)
-        
-        # Convert to dB scale
-        mag_db = librosa.amplitude_to_db(mag)
-        
-        # Create a mask based on threshold
-        mask = mag_db > threshold_db
-        
-        # If there are frequency ranges to preserve
-        if preserve_freq_ranges:
-            # Get frequency values for each bin
-            freqs = librosa.fft_frequencies(sr=sr, n_fft=2048)
-            
-            # For each range to preserve
-            for min_freq, max_freq in preserve_freq_ranges:
-                # Find bins in the preserve range
-                preserve_mask = (freqs >= min_freq) & (freqs <= max_freq)
-                # Add these bins to the mask
-                mask[preserve_mask] = True
-        
-        # Apply the mask
-        mag_filtered = mag * mask
-        
-        # Reconstruct signal
-        y_filtered = librosa.istft(mag_filtered * phase)
-        
-        return y_filtered
-
     def process_instructions(self, instructions):
         """Process instruction string"""
         instructions = instructions.strip()
@@ -271,67 +292,83 @@ class AudioProcessor:
             print("Incomplete instruction.")  # Debugging line
             return True  # Continue processing if not a complete instruction
 
+        # Replace custom commands with their values
+        for command_name, command_value in self.commands.items():
+            instructions = instructions.replace(command_name + ';', command_value + ';')
+
         # Parse and process other operations
         operations = self.parse_instructions(instructions)
         if operations:
-            try:
-                # Store playback state
-                position = self.playback.current_position
-                was_playing = self.playback.is_playing
-                
-                if was_playing:
-                    self.playback.pause_playback()
-                
-                # Process each operation
-                for operation in operations:
-                    if operation['type'] == 'revert':
-                        steps = int(operation['values'][0])  # Get the number of steps
-                        if steps > 0 and self.history.can_undo():
-                            for _ in range(steps):
-                                file_path, ops = self.history.undo()
-                                if file_path:
-                                    # Load the previous state
-                                    shutil.copy2(file_path, self.working_file)
-                                    self.playback.load_audio(self.working_file)
-                        elif steps < 0 and self.history.can_redo():
-                            for _ in range(-steps):
-                                file_path, ops = self.history.redo()
-                                if file_path:
-                                    # Load the next state
-                                    shutil.copy2(file_path, self.working_file)
-                                    self.playback.load_audio(self.working_file)
-                        self.print_history_status()
-                        return  # Exit the function instead of continuing a loop
-
-                # Load current working file
-                y, sr = sf.read(self.working_file)
-                
-                # Apply other operations
-                y = self.apply_operations(y, operations)
-                
-                # Save to new temporary file
-                temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
-                sf.write(temp_file, y, sr)
-                
-                # Add to history and update working file
-                self.history.add(temp_file, operations)
-                shutil.copy2(temp_file, self.working_file)
-                
-                # Update playback
-                self.playback.load_audio(self.working_file)
-                
-                # Restore playback state
-                if was_playing:
-                    self.playback.start_playback(position)
-                
-                print("\nOperations applied successfully")
-                
-            except Exception as e:
-                print(f"\nError processing audio: {str(e)}")
+            self.execute_operations(operations)
         else:
             raise Exception("Couldn't parse instructions from " + instructions) 
             
         return True  # Continue processing
+
+    def execute_operations(self, operations):
+        """Execute parsed operations on the audio"""
+        try:
+            # Store playback state
+            position = self.playback.current_position
+            was_playing = self.playback.is_playing
+            
+            if was_playing:
+                self.playback.pause_playback()
+            
+            # Process each operation
+            for operation in operations:
+                if operation['type'] == 'revert':
+                    self.handle_revert_operation(operation)
+                    return  # Exit the function instead of continuing a loop
+
+            # Load current working file
+            y, sr = sf.read(self.working_file)
+            
+            print("Applying operations...")
+            for op in operations:
+                print(f"Applying operation: {op['type']} with values {op['values']}")
+            # Apply other operations
+            y = self.apply_operations(y, operations)
+            print("Operations applied.")
+            
+            # Save to new temporary file
+            temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
+            sf.write(temp_file, y, sr)
+            
+            # Add to history and update working file
+            self.history.add(temp_file, operations)
+            shutil.copy2(temp_file, self.working_file)
+            
+            # Update playback
+            self.playback.load_audio(self.working_file)
+            
+            # Restore playback state
+            if was_playing:
+                self.playback.start_playback(position)
+            
+            print("\nOperations applied successfully")
+            
+        except Exception as e:
+            print(f"\nError processing audio: {str(e)}")
+
+    def handle_revert_operation(self, operation):
+        """Handle revert operation"""
+        steps = int(operation['values'][0])  # Get the number of steps
+        if steps > 0 and self.history.can_undo():
+            for _ in range(steps):
+                file_path, ops = self.history.undo()
+                if file_path:
+                    # Load the previous state
+                    shutil.copy2(file_path, self.working_file)
+                    self.playback.load_audio(self.working_file)
+        elif steps < 0 and self.history.can_redo():
+            for _ in range(-steps):
+                file_path, ops = self.history.redo()
+                if file_path:
+                    # Load the next state
+                    shutil.copy2(file_path, self.working_file)
+                    self.playback.load_audio(self.working_file)
+        self.print_history_status()
 
     def apply_operations(self, y, operations):
         """Apply audio operations"""
@@ -350,66 +387,53 @@ class AudioProcessor:
                 value3 = values[2] if len(values) > 2 else 1
             
                 if op['type'] == 'p':
-                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=value1)
+                    y = AudioEffects.pitch_shift(y, self.sr, value1)
                 elif op['type'] == 't':
-                    y = librosa.effects.time_stretch(y, rate=float(value1))
+                    y = AudioEffects.time_stretch(y, rate=float(value1))
                 elif op['type'] == 'r':
-                    rate = max(0.1, float(value1))
-                    target_sr = int(self.sr * rate)
-                    y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
-                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
+                    y = AudioEffects.resample_time(y, self.sr, rate=float(value1))
                 elif op['type'] == 'rt':
-                    y = resample_time(y, self.sr, value1)
+                    y = AudioEffects.resample_time(y, self.sr, value1)
                 elif op['type'] == 'rev':
-                    y = reverse_by_beats(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.reverse_by_beats(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'speed':
-                    y = librosa.effects.time_stretch(y, rate=float(value1))
+                    y = AudioEffects.time_stretch(y, rate=float(value1))
                 elif op['type'] == 'stut':
-                    y = add_stutter(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.add_stutter(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'echo':
                     delay = value1 if value1 > 0 else beat_length
-                    y = add_echo(y, self.sr, delay, beats, value1, value2, value3)
+                    y = AudioEffects.add_echo(y, self.sr, delay, beats, value1, value2, value3)
                 elif op['type'] == 'loop':
-                    y = create_loop(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.create_loop(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'chop':
-                    y = chop_and_rearrange(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.chop_and_rearrange(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'mute':
-                    y = apply_frequency_muting(y, self.sr, threshold_db=value1)
+                    y = AudioEffects.apply_frequency_muting(y, self.sr, threshold_db=value1)
                 elif op['type'] == 'trig':
-                    y = apply_trigger_muting(y, self.sr, sensitivity=value1, beats=beats)
-                elif op['type'] == 'del':  # Add new delete command
-                    y = delete_beat_parts(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.apply_trigger_muting(y, self.sr, sensitivity=value1, beats=beats)
+                elif op['type'] == 'del':
+                    y = AudioEffects.delete_beat_parts(y, self.sr, beats, value1, value2, value3)
                 elif op['type'] == 'n':
                     threshold = value1
                     preserve_ranges = [
                         (80, 1200),    # Voice fundamental frequencies
                         (2000, 4000)   # Voice harmonics and clarity
                     ]
-                    y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
+                    y = AudioEffects.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
                 elif op['type'] == 'perc':
-                    y = extract_percussive_track(y, self.sr)
+                    y = AudioEffects.extract_percussive_track(y, self.sr)
                 elif op['type'] == 'copy':
                     start_byte = int(value1)
                     num_bytes = int(value2)
                     y[start_byte:start_byte + num_bytes] = y[start_byte]
                 elif op['type'] == 'mash':
-                    y = random_mix_beats(y, self.sr, beats, value1, value2, value3)
+                    y = AudioEffects.random_mix_beats(y, self.sr, beats, value1, value2, value3)
     
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{values} failed: {str(e)}")
                 continue
 
-        preserve_ranges = [
-            (80, 1200),    # Voice fundamental frequencies
-            (2000, 4000)   # Voice harmonics and clarity
-        ]
-        y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
-        # Match characteristics
-        y = match_frequency_profile(y, y_original, self.sr)
-        y = match_loudness(y, y_original, self.sr)
-    
         return y
-
 
     def process_input(self):
         """Process input and wait for Enter key press"""
@@ -427,60 +451,7 @@ class AudioProcessor:
                         # Process the instruction
                         operations = self.parse_instructions(instruction + ';')
                         if operations:
-                            try:
-                                # Store playback state
-                                position = self.playback.current_position
-                                was_playing = self.playback.is_playing
-                    
-                                if was_playing:
-                                    self.playback.pause_playback()
-                    
-                                # Process each operation
-                                for operation in operations:
-                                    if operation['type'] == 'revert':
-                                        steps = int(operation['values'][0])  # Get the number of steps
-                                        if steps > 0 and self.history.can_undo():
-                                            for _ in range(steps):
-                                                file_path, ops = self.history.undo()
-                                                if file_path:
-                                                    # Load the previous state
-                                                    shutil.copy2(file_path, self.working_file)
-                                                    self.playback.load_audio(self.working_file)
-                                        elif steps < 0 and self.history.can_redo():
-                                            for _ in range(-steps):
-                                                file_path, ops = self.history.redo()
-                                                if file_path:
-                                                    # Load the next state
-                                                    shutil.copy2(file_path, self.working_file)
-                                                    self.playback.load_audio(self.working_file)
-                                        self.print_history_status()
-                                        return  # Exit the function instead of continuing a loop
-
-                                # Load current working file
-                                y, sr = sf.read(self.working_file)
-                    
-                                # Apply other operations
-                                y = self.apply_operations(y, operations)
-                    
-                                # Save to new temporary file
-                                temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
-                                sf.write(temp_file, y, sr)
-                    
-                                # Add to history and update working file
-                                self.history.add(temp_file, operations)
-                                shutil.copy2(temp_file, self.working_file)
-                    
-                                # Update playback
-                                self.playback.load_audio(self.working_file)
-                    
-                                # Restore playback state
-                                if was_playing:
-                                    self.playback.start_playback(position)
-                    
-                                print("\nOperations applied successfully")
-                    
-                            except Exception as e:
-                                print(f"\nError processing audio: {str(e)}")
+                            self.execute_operations(operations)
                         else:
                             print("\nNo valid instructions found. Please check your input.")
 
@@ -547,8 +518,6 @@ class AudioProcessor:
         except Exception as e:
             print(f"Error cleaning up temporary files: {str(e)}")
 
-
-
     def print_history_status(self):
         current = self.history.current_index + 1
         total = len(self.history.history)
@@ -567,79 +536,6 @@ class AudioProcessor:
         self.history.add(temp_file, operations)
         shutil.copy2(temp_file, self.working_file)
         self.playback.load_audio(self.working_file)
-        """Apply audio operations"""
-        y_original = y.copy()
-    
-        # Detect BPM at the start
-        tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr)
-        beat_length = 60.0 / tempo  # Length of one beat in seconds
-    
-        for op in operations:
-            try:
-                # Extract values with defaults
-                values = op['values']
-                value1 = values[0] if len(values) > 0 else 1
-                value2 = values[1] if len(values) > 1 else 4
-                value3 = values[2] if len(values) > 2 else 1
-            
-                if op['type'] == 'p':
-                    y = librosa.effects.pitch_shift(y, sr=self.sr, n_steps=value1)
-                elif op['type'] == 't':
-                    y = librosa.effects.time_stretch(y, rate=float(value1))
-                elif op['type'] == 'r':
-                    rate = max(0.1, float(value1))
-                    target_sr = int(self.sr * rate)
-                    y = librosa.resample(y, orig_sr=self.sr, target_sr=target_sr)
-                    y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
-                elif op['type'] == 'rt':
-                    y = resample_time(y, self.sr, value1)
-                elif op['type'] == 'rev':
-                    y = reverse_by_beats(y, self.sr, beats, value1, value2, value3)
-                elif op['type'] == 'speed':
-                    y = librosa.effects.time_stretch(y, rate=float(value1))
-                elif op['type'] == 'stut':
-                    y = add_stutter(y, self.sr, beats, value1, value2, value3)
-                elif op['type'] == 'echo':
-                    delay = value1 if value1 > 0 else beat_length
-                    y = add_echo(y, self.sr, delay, beats, value1, value2, value3)
-                elif op['type'] == 'loop':
-                    y = create_loop(y, self.sr, beats, value1, value2, value3)
-                elif op['type'] == 'chop':
-                    y = chop_and_rearrange(y, self.sr, beats, value1, value2, value3)
-                elif op['type'] == 'mute':
-                    y = apply_frequency_muting(y, self.sr, threshold_db=value1)
-                elif op['type'] == 'trig':
-                    y = apply_trigger_muting(y, self.sr, sensitivity=value1, beats=beats)
-                elif op['type'] == 'n':
-                    threshold = value1
-                    preserve_ranges = [
-                        (80, 1200),    # Voice fundamental frequencies
-                        (2000, 4000)   # Voice harmonics and clarity
-                    ]
-                    y = self.spectral_gate(y, self.sr, threshold_db=threshold, preserve_freq_ranges=preserve_ranges)
-                elif op['type'] == 'perc':
-                    y = extract_percussive_track(y, self.sr)
-                elif op['type'] == 'copy':
-                    start_byte = int(value1)
-                    num_bytes = int(value2)
-                    y[start_byte:start_byte + num_bytes] = y[start_byte]
-                elif op['type'] == 'mash':
-                    y = random_mix_beats(y, self.sr, beats, value1, value2, value3)
-    
-            except Exception as e:
-                print(f"Warning: Operation {op['type']}:{values} failed: {str(e)}")
-                continue
-
-        preserve_ranges = [
-            (80, 1200),    # Voice fundamental frequencies
-            (2000, 4000)   # Voice harmonics and clarity
-        ]
-        y = self.spectral_gate(y, self.sr, preserve_freq_ranges=preserve_ranges)
-        # Match characteristics
-        y = match_frequency_profile(y, y_original, self.sr)
-        y = match_loudness(y, y_original, self.sr)
-    
-        return y
 
     def parse_instructions(self, instructions):
         """Parse the instruction string into operations"""
@@ -648,12 +544,17 @@ class AudioProcessor:
         parts = instructions.split(';')
         for part in parts:
             if ':' in part:
-                cmd, args = part.split(':')
-                if ',' in args:
-                    values = [float(arg.replace(',', '.')) for arg in args.split(',')]
-                    operations.append({'type': cmd, 'values': values})
-                
-                    print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
+                cmd, *args = part.split(':')  # Use unpacking to handle multiple arguments
+                values = [float(arg.replace(',', '.')) for arg in args if arg]  # Convert arguments to float
+                operations.append({'type': cmd, 'values': values})
+                print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
             else:
-                operations.append({'type': parts, 'values': {}})
+                if part:  # Ensure the part is not empty
+                    operations.append({'type': part, 'values': []})
+                    print(f"Operation: {{'type': {part}, 'values': []}}")
         return operations
+
+
+
+
+
