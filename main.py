@@ -309,76 +309,70 @@ class AudioProcessor:
             
         return True  # Continue processing
 
-    def process_input(self, key_event):
+    def process_input(self):
         """Process input and wait for Enter key press"""
-        if key_event.event_type == 'down':
-            if key_event.name == 'space':
-                self.playback.toggle_playback()
-            elif key_event.name == 'enter':
-                command = self.input_buffer.strip()
-                if command:
-                    # Process the command
-                    operations = self.parse_instructions(command)
-                    if operations:
-                        try:
-                            # Store playback state
-                            position = self.playback.current_position
-                            was_playing = self.playback.is_playing
-                        
-                            if was_playing:
-                                self.playback.pause_playback()
-                        
-                            # Process each operation
-                            for operation in operations:
-                                if operation['type'] == 'revert':
-                                    steps = int(operation['values'][0])  # Get the number of steps
-                                    if steps > 0 and self.history.can_undo():
-                                        for _ in range(steps):
-                                            file_path, ops = self.history.undo()
-                                            if file_path:
-                                                # Load the previous state
-                                                shutil.copy2(file_path, self.working_file)
-                                                self.playback.load_audio(self.working_file)
-                                    elif steps < 0 and self.history.can_redo():
-                                        for _ in range(-steps):
-                                            file_path, ops = self.history.redo()
-                                            if file_path:
-                                                # Load the next state
-                                                shutil.copy2(file_path, self.working_file)
-                                                self.playback.load_audio(self.working_file)
-                                    self.print_history_status()
-                                    return  # Exit the function instead of continuing a loop
-
-                            # Load current working file
-                            y, sr = sf.read(self.working_file)
-                        
-                            # Apply other operations
-                            y = self.apply_operations(y, operations)
-                        
-                            # Save to new temporary file
-                            temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
-                            sf.write(temp_file, y, sr)
-                        
-                            # Add to history and update working file
-                            self.history.add(temp_file, operations)
-                            shutil.copy2(temp_file, self.working_file)
-                        
-                            # Update playback
-                            self.playback.load_audio(self.working_file)
-                        
-                            # Restore playback state
-                            if was_playing:
-                                self.playback.start_playback(position)
-                        
-                            print("\nOperations applied successfully")
-                        
-                        except Exception as e:
-                            print(f"\nError processing audio: {str(e)}")
-                    else:
-                        print("\nNo valid instructions found. Please check your input.")
+        while True:
+            command = input("> ").strip()
+            if command:
+                # Process the command
+                operations = self.parse_instructions(command)
+                if operations:
+                    try:
+                        # Store playback state
+                        position = self.playback.current_position
+                        was_playing = self.playback.is_playing
                 
-                self.input_buffer = ""  # Clear the input buffer
-                print("\n> ", end='', flush=True)
+                        if was_playing:
+                            self.playback.pause_playback()
+                
+                        # Process each operation
+                        for operation in operations:
+                            if operation['type'] == 'revert':
+                                steps = int(operation['values'][0])  # Get the number of steps
+                                if steps > 0 and self.history.can_undo():
+                                    for _ in range(steps):
+                                        file_path, ops = self.history.undo()
+                                        if file_path:
+                                            # Load the previous state
+                                            shutil.copy2(file_path, self.working_file)
+                                            self.playback.load_audio(self.working_file)
+                                elif steps < 0 and self.history.can_redo():
+                                    for _ in range(-steps):
+                                        file_path, ops = self.history.redo()
+                                        if file_path:
+                                            # Load the next state
+                                            shutil.copy2(file_path, self.working_file)
+                                            self.playback.load_audio(self.working_file)
+                                self.print_history_status()
+                                return  # Exit the function instead of continuing a loop
+
+                        # Load current working file
+                        y, sr = sf.read(self.working_file)
+                
+                        # Apply other operations
+                        y = self.apply_operations(y, operations)
+                
+                        # Save to new temporary file
+                        temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
+                        sf.write(temp_file, y, sr)
+                
+                        # Add to history and update working file
+                        self.history.add(temp_file, operations)
+                        shutil.copy2(temp_file, self.working_file)
+                
+                        # Update playback
+                        self.playback.load_audio(self.working_file)
+                
+                        # Restore playback state
+                        if was_playing:
+                            self.playback.start_playback(position)
+                
+                        print("\nOperations applied successfully")
+                
+                    except Exception as e:
+                        print(f"\nError processing audio: {str(e)}")
+                else:
+                    print("\nNo valid instructions found. Please check your input.")
 
 
 
@@ -1109,11 +1103,9 @@ def main():
 
     try:
         while True:
-            time.sleep(5)  # Use time.sleep instead of sleep
-            event = keyboard.read_event()
-            cont = processor.process_input(event)
-            if not cont:  # Check if the return value indicates to exit
-                break
+            processor.process_input()
+    except KeyboardInterrupt:
+        pass
     except KeyboardInterrupt:
         pass
     finally:
