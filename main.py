@@ -552,20 +552,20 @@ def reverse_by_beats(y, sr, beats, num_beats=4, n=1, m=1):
     # Process in chunks of num_beats
     for i in range(0, len(beat_frames) - num_beats, num_beats * m):
         if (i // num_beats) % n == 0:
-        start = beat_frames[i]
-        end = beat_frames[i + num_beats] if i + num_beats < len(beat_frames) else len(y)
-        
-        # Reverse this chunk
-        chunk = y[start:end]
-        output[start:end] = chunk[::-1]
-        
-        # Apply crossfade
-        if i > 0:
-            crossfade_length = min(1024, end - start)
-            fade_in = np.linspace(0, 1, crossfade_length)
-            fade_out = np.linspace(1, 0, crossfade_length)
-            output[start:start + crossfade_length] *= fade_in
-            output[start - crossfade_length:start] *= fade_out
+            start = beat_frames[i]
+            end = beat_frames[i + num_beats] if i + num_beats < len(beat_frames) else len(y)
+            
+            # Reverse this chunk
+            chunk = y[start:end]
+            output[start:end] = chunk[::-1]
+            
+            # Apply crossfade
+            if i > 0:
+                crossfade_length = min(1024, end - start)
+                fade_in = np.linspace(0, 1, crossfade_length)
+                fade_out = np.linspace(1, 0, crossfade_length)
+                output[start:start + crossfade_length] *= fade_in
+                output[start - crossfade_length:start] *= fade_out
     
     return output
 
