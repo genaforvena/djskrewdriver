@@ -234,12 +234,18 @@ class AudioProcessor:
 
         # Check for exit command
         if instructions == 'q;':
-            return False  # Exit the program
+            print("Exiting the program...")
+            sys.exit(0)  # Exit the program
 
         # Check for save command
         elif instructions == 's;':
             self.save_current_state()  # Save the current state
             print("\nCurrent state saved.")
+            return True  # Continue processing instructions
+        # Check for apply command
+        elif instructions == 'a;':
+            self.apply_changes()  # Apply changes to the track
+            print("\nChanges applied.")
             return True  # Continue processing instructions
 
         # Check for incomplete instruction
@@ -449,7 +455,16 @@ class AudioProcessor:
         print(f"\nState {current}/{total}: {ops_str}")
         print("> " + self.input_buffer, end='', flush=True)
 
-    def apply_operations(self, y, operations):
+    def apply_changes(self):
+        """Apply changes to the track"""
+        y, sr = sf.read(self.working_file)
+        operations = self.history.current()[1]  # Get the operations from the current state
+        y = self.apply_operations(y, operations)
+        temp_file = os.path.join(self.temp_dir, f'temp_{datetime.now().strftime("%Y%m%d%H%M%S")}.wav')
+        sf.write(temp_file, y, sr)
+        self.history.add(temp_file, operations)
+        shutil.copy2(temp_file, self.working_file)
+        self.playback.load_audio(self.working_file)
         """Apply audio operations"""
         y_original = y.copy()
     
