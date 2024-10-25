@@ -329,7 +329,7 @@ class AudioProcessor:
             except Exception as e:
                 print(f"\nError processing audio: {str(e)}")
         else:
-            print("\nNo valid instructions found. Please check your input.")
+            raise Exception("Couldn't parse instructions from " + instructions) 
             
         return True  # Continue processing
 
@@ -643,16 +643,17 @@ class AudioProcessor:
 
     def parse_instructions(self, instructions):
         """Parse the instruction string into operations"""
+        print("parsing instructions...", instructions)
         operations = []
-        # Updated pattern to match the new format with any number of arguments
-        pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]|mash|revert):((-?\d*[.,]?\d+:)*(-?\d*[.,]?\d+));?"
-        matches = re.finditer(pattern, instructions)
-
-        for match in matches:
-            if match.groups() and len(match.groups()) >= 2:
-                cmd_type, args = match.groups()[:2]  # Ensure we only take the first two groups
-                args = args.split(':')[:-1]  # Remove the last empty string
-                values = [float(arg.replace(',', '.')) for arg in args]
-                operations.append({'type': cmd_type, 'values': values})  # Changed 'value' to 'values'
-
+        parts = instructions.split(';')
+        for part in parts:
+            if ':' in part:
+                cmd, args = part.split(':')
+                if ',' in args:
+                    values = [float(arg.replace(',', '.')) for arg in args.split(',')]
+                    operations.append({'type': cmd, 'values': values})
+                
+                    print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
+            else:
+                operations.append({'type': parts, 'values': {}})
         return operations
