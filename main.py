@@ -311,64 +311,54 @@ class AudioProcessor:
 
     def process_input(self, key_event):
         """Process input character by character"""
+        if len(key_event.name) == 1:
+            self.input_buffer += key_event.name
+
         if key_event.event_type == 'down':
             if key_event.name == 'space':
                 self.playback.toggle_playback()
                     
-            elif key_event.name == 'up':
-                self.playback.reset_position()
-                self.playback.start_playback()
-                    
-            elif key_event.name == 'enter':
-                command = self.input_buffer.strip()
-                if command.startswith('revert:'):
-                    steps = int(command.split(':')[1])  # Get the number of steps
-                    if steps > 0 and self.history.can_undo():
-                        for _ in range(steps):
-                            file_path, ops = self.history.undo()
-                            if file_path:
-                                # Load the previous state
-                                shutil.copy2(file_path, self.working_file)
-                                self.playback.load_audio(self.working_file)
-                    elif steps < 0 and self.history.can_redo():
-                        for _ in range(-steps):
-                            file_path, ops = self.history.redo()
-                            if file_path:
-                                # Load the next state
-                                shutil.copy2(file_path, self.working_file)
-                                self.playback.load_audio(self.working_file)
-                    self.print_history_status()
-                    return  # Exit the function instead of continuing a loop
+            # Check for new command 'a;'
+            command = self.input_buffer  # Define command from input buffer
+            if command == 'a;':
+                # Handle the 'a;' command here
+                print("Executing command 'a;'")
+                # Add your logic for command 'a;' here
+                self.input_buffer = ""  # Clear the input buffer
+                print("\n> ", end='', flush=True)
+                return True            # Existing command handling
+            elif command == 'q;':
+                return False  # Exit the program
+                
+            elif command == 's;':
+                self.save_current_state()  # Save the current state
+                print("\nCurrent state saved.")
+                self.input_buffer = ""  # Clear the input buffer
+                print("\n> ", end='', flush=True)
+                return True  # Continue processing instructions
 
-                elif command.startswith('select:'):
-                    index = int(command.split(':')[1])  # Get the index to select
-                    if 0 <= index < len(self.history.history):
-                        file_path, ops = self.history.history[index]
-                        self.input_buffer = f"revert:{index};"  # Prepare the revert command
-                        print(f"\nSelected history index {index}: {file_path}")
-                    else:
-                        print("Invalid index. Please try again.")
-                    print("\n> ", end='', flush=True)
-                if self.input_buffer.strip().endswith(';'):
-                    instructions = self.input_buffer
-                    self.input_buffer = ""
-                    print("\n> ", end='', flush=True)
-                    # Process instructions and continue regardless of result
-                    stop = self.process_instructions(instructions)
-                    if stop:
-                        return True
-                else:
-                    print("\n> " + self.input_buffer, end='', flush=True)
-                    
-            elif key_event.name == 'backspace':
-                if self.input_buffer:
-                    self.input_buffer = self.input_buffer[:-1]
-                    print('\r> ' + self.input_buffer + ' \b', end='', flush=True)
-                    
-            elif len(key_event.name) == 1:
-                self.input_buffer += key_event.name
-                print(key_event.name, end='', flush=True)
-        
+
+            
+        elif key_event.name == ';':    
+            command = self.input_buffer  # Define command from input buffer
+            # Check for incomplete instruction
+            if not command.endswith(';'):
+                print("Incomplete instruction.")  # Debugging line
+                return True  # Continue processing if not a complete instruction
+
+            # Process other commands
+            operations = self.parse_instructions(command)
+            if operations:
+                # Process the operations as needed
+                pass  # Add your logic for processing operations here
+            else:
+                print("\nNo valid instructions found. Please check your input.")
+            
+            self.input_buffer = ""  # Clear the input buffer
+            print("\n> ", end='', flush=True)
+
+
+
         return True
     
     def save_current_state(self):
@@ -1097,8 +1087,8 @@ def main():
     try:
         while True:
             event = keyboard.read_event(suppress=True)
-            stop = processor.process_input(event)
-            if stop is False:  # Check if the return value indicates to exit
+            cont = processor.process_input(event)
+            if not cont:  # Check if the return value indicates to exit
                 break
     except KeyboardInterrupt:
         pass
