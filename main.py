@@ -453,9 +453,23 @@ class AudioProcessor:
         except Exception as e:
             print(f"Error cleaning up temporary files: {str(e)}")
 
+
+
+    def print_history_status(self):
+        current = self.history.current_index + 1
+        total = len(self.history.history)
+        ops = self.history.current()[0]  # Operations are now first in tuple
+        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
+        print(f"\nState {current}/{total}: {ops_str}")
+        print("> " + self.input_buffer, end='', flush=True)
+    
     def apply_operations(self, y, operations):
         """Apply audio operations"""
         y_original = y.copy()
+        
+        # Detect BPM at the start
+        tempo, beats = librosa.beat.beat_track(y=y, sr=self.sr)
+        beat_length = 60.0 / tempo  # Length of one beat in seconds
         
         for op in operations:
             try:
@@ -470,9 +484,29 @@ class AudioProcessor:
                     y = librosa.resample(y, orig_sr=target_sr, target_sr=self.sr)
                 elif op['type'] == 'rt':
                     y = resample_time(y, self.sr, op['value'])
-                elif op['type'] == 'n':  # New noise filter operation
+                elif op['type'] == 'rev':
+                    # Reverse the audio in beat-synchronized chunks
+                    y = reverse_by_beats(y, self.sr, beats, op['value'])
+                elif op['type'] == 'speed':
+                    # Change speed without affecting pitch using phase vocoder
+                    y = change_speed(y, self.sr, op['value'])
+                elif op['type'] == 'stut':
+                    # Add stutter effect synchronized with beats
+                    y = add_stutter(y, self.sr, beats, rate=op['value'])
+                elif op['type'] == 'echo':
+                    # Add echo effect synchronized with beat length
+                    delay = op['value'] if op['value'] > 0 else beat_length
+                    y = add_echo(y, self.sr, delay=delay, beats=beats)
+                elif op['type'] == 'loop':
+                    # Loop with beat-synchronized length
+                    beats_per_loop = op['value'] if op['value'] > 0 else 4  # Default to 4 beats
+                    y = create_loop(y, self.sr, beats, beats_per_loop)
+                elif op['type'] == 'chop':
+                    # Chop and rearrange beats
+                    beats_per_chunk = op['value'] if op['value'] > 0 else 2
+                    y = chop_and_rearrange(y, self.sr, beats, beats_per_chunk)
+                elif op['type'] == 'n':
                     threshold = op['value']
-                    # Example preserve ranges (can be customized)
                     preserve_ranges = [
                         (80, 1200),    # Voice fundamental frequencies
                         (2000, 4000)   # Voice harmonics and clarity
@@ -482,7 +516,7 @@ class AudioProcessor:
             except Exception as e:
                 print(f"Warning: Operation {op['type']}:{op['value']} failed: {str(e)}")
                 continue
- 
+
         preserve_ranges = [
                         (80, 1200),    # Voice fundamental frequencies
                         (2000, 4000)   # Voice harmonics and clarity
@@ -494,13 +528,217 @@ class AudioProcessor:
         
         return y
 
-    def print_history_status(self):
-        current = self.history.current_index + 1
-        total = len(self.history.history)
-        ops = self.history.current()[0]  # Operations are now first in tuple
-        ops_str = " → ".join([f"{op['type']}:{op['value']}" for op in ops]) if ops else "Original"
-        print(f"\nState {current}/{total}: {ops_str}")
-        print("> " + self.input_buffer, end='', flush=True)
+def get_beat_frames(beats, sr, hop_length=512):
+    """Convert beat positions to frame indices"""
+    return librosa.frames_to_samples(beats, hop_length=hop_length)
+
+def reverse_by_beats(y, sr, beats, num_beats=4):
+    """
+    Reverse audio in chunks of specified beats
+    num_beats: number of beats per reversed chunk
+    """
+    # Get beat frames
+    beat_frames = get_beat_frames(beats, sr)
+    
+    # Create output array
+    output = np.zeros_like(y)
+    
+    # Process in chunks of num_beats
+    for i in range(0, len(beat_frames) - num_beats, num_beats):
+        start = beat_frames[i]
+        end = beat_frames[i + num_beats] if i + num_beats < len(beat_frames) else len(y)
+        
+        # Reverse this chunk
+        chunk = y[start:end]
+        output[start:end] = chunk[::-1]
+        
+        # Apply crossfade
+        if i > 0:
+            crossfade_length = min(1024, end - start)
+            fade_in = np.linspace(0, 1, crossfade_length)
+            fade_out = np.linspace(1, 0, crossfade_length)
+            output[start:start + crossfade_length] *= fade_in
+            output[start - crossfade_length:start] *= fade_out
+    
+    return output
+
+def add_stutter(y, sr, beats, rate=1.0):
+    """
+    Add stutter effect synchronized with beats
+    rate: number of stutters per beat (1.0 = one stutter per beat)
+    """
+    beat_frames = get_beat_frames(beats, sr)
+    output = np.zeros_like(y)
+    
+    # Copy original signal
+    output[:] = y[:]
+    
+    # Add stutters at beat positions
+    for i in range(len(beat_frames) - 1):
+        beat_start = beat_frames[i]
+        beat_end = beat_frames[i + 1]
+        beat_length = beat_end - beat_start
+        
+        # Number of stutters for this beat
+        num_stutters = int(rate)
+        if num_stutters > 0:
+            stutter_length = beat_length // num_stutters
+            
+            for j in range(num_stutters):
+                # Get segment to repeat
+                segment_start = beat_start + (j * stutter_length)
+                segment = y[segment_start:segment_start + stutter_length]
+                
+                # Apply fade envelope
+                fade = np.linspace(1.0, 0.0, len(segment)) ** 2
+                
+                # Add stuttered segment
+                if segment_start + len(segment) <= len(output):
+                    output[segment_start:segment_start + len(segment)] += segment * fade
+    
+    # Normalize
+    output = output / np.max(np.abs(output))
+    return output
+
+def add_echo(y, sr, delay, beats, decay=0.5):
+    """
+    Add echo effect synchronized with beats
+    delay: echo delay in seconds (if 0, uses one beat length)
+    """
+    if delay <= 0:
+        if len(beats) >= 2:
+            # Use average beat length for delay
+            beat_frames = get_beat_frames(beats, sr)
+            delays = np.diff(beat_frames)
+            delay = np.mean(delays) / sr
+        else:
+            delay = 0.25  # Default to 250ms if no beats detected
+    
+    # Convert delay to samples
+    delay_samples = int(sr * delay)
+    
+    # Create output array
+    output = np.zeros(len(y) + delay_samples)
+    
+    # Add original signal
+    output[:len(y)] = y
+    
+    # Add multiple echoes
+    for i in range(1, 4):  # Add 3 echoes with decreasing volume
+        echo_delay = delay_samples * i
+        if echo_delay + len(y) <= len(output):
+            output[echo_delay:echo_delay + len(y)] += y * (decay ** i)
+    
+    # Trim to original length
+    output = output[:len(y)]
+    
+    # Normalize
+    output = output / np.max(np.abs(output))
+    return output
+
+def create_loop(y, sr, beats, beats_per_loop=4):
+    """
+    Create loops synchronized with beats
+    beats_per_loop: number of beats per loop
+    """
+    beat_frames = get_beat_frames(beats, sr)
+    
+    if len(beat_frames) < beats_per_loop + 1:
+        return y
+    
+    # Find loop points
+    loop_start = beat_frames[0]
+    loop_end = beat_frames[beats_per_loop]
+    
+    # Extract loop
+    loop = y[loop_start:loop_end]
+    
+    # Apply crossfade
+    crossfade_length = min(1024, len(loop) // 4)
+    fade_in = np.linspace(0, 1, crossfade_length)
+    fade_out = np.linspace(1, 0, crossfade_length)
+    
+    loop[-crossfade_length:] *= fade_out
+    loop[:crossfade_length] *= fade_in
+    
+    # Create output by repeating loop
+    num_loops = int(np.ceil(len(y) / len(loop)))
+    output = np.tile(loop, num_loops)[:len(y)]
+    
+    # Crossfade with original ending
+    fade_length = min(len(y) // 8, sr)  # 1/8th of audio or 1 second, whichever is shorter
+    output[-fade_length:] *= np.linspace(1, 0, fade_length)
+    y[-fade_length:] *= np.linspace(0, 1, fade_length)
+    output[-fade_length:] += y[-fade_length:]
+    
+    return output
+
+def chop_and_rearrange(y, sr, beats, beats_per_chunk=2):
+    """
+    Chop audio into beat-sized chunks and rearrange them
+    beats_per_chunk: number of beats per chunk
+    """
+    beat_frames = get_beat_frames(beats, sr)
+    
+    if len(beat_frames) < beats_per_chunk + 1:
+        return y
+        
+    # Create chunks
+    chunks = []
+    for i in range(0, len(beat_frames) - beats_per_chunk, beats_per_chunk):
+        start = beat_frames[i]
+        end = beat_frames[i + beats_per_chunk]
+        chunks.append(y[start:end])
+    
+    if not chunks:
+        return y
+    
+    # Rearrange chunks in an interesting pattern
+    # Example pattern: 1, 2, 2, 1, 3, 3, 2, 1
+    pattern = []
+    for i in range(len(chunks)):
+        pattern.extend([i, i, (i + 1) % len(chunks)])
+    
+    # Create output
+    output = np.zeros_like(y)
+    pos = 0
+    crossfade_length = min(1024, len(chunks[0]) // 4)
+    
+    for idx in pattern:
+        if pos + len(chunks[idx]) > len(output):
+            break
+            
+        # Add chunk with crossfade
+        if pos > 0:
+            # Crossfade with previous chunk
+            fade_in = np.linspace(0, 1, crossfade_length)
+            fade_out = np.linspace(1, 0, crossfade_length)
+            output[pos:pos + crossfade_length] *= fade_out
+            chunk_data = chunks[idx].copy()
+            chunk_data[:crossfade_length] *= fade_in
+            output[pos:pos + len(chunk_data)] += chunk_data
+        else:
+            output[pos:pos + len(chunks[idx])] = chunks[idx]
+            
+        pos += len(chunks[idx])
+    
+    # Trim to original length and normalize
+    output = output[:len(y)]
+    output = output / np.max(np.abs(output))
+    return output
+
+def parse_instructions(instructions):
+    """Parse the instruction string into operations"""
+    operations = []
+    pattern = r"(chop|rev|speed|stut|echo|loop|rt|[ptr]):(-?\d*[.,]?\d+);?"
+    matches = re.finditer(pattern, instructions)
+
+    for match in matches:
+        cmd_type, value = match.groups()
+        value = float(value.replace(',', '.'))
+        operations.append({'type': cmd_type, 'value': value})
+
+    return operations
 
 class AudioHistory:
     def __init__(self, max_size=50):
