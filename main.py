@@ -642,41 +642,50 @@ def add_echo(y, sr, delay, beats, decay=0.5):
     output = output / np.max(np.abs(output))
     return output
 
-def create_loop(y, sr, beats, beats_per_loop=4):
+def create_loop(y, sr, beats, beats_per_loop=4, loop_portion=0.5):
     """
     Create loops synchronized with beats
     beats_per_loop: number of beats per loop
+    loop_portion: portion of the beat to loop (0.0 to 1.0)
     """
     beat_frames = get_beat_frames(beats, sr)
     
     if len(beat_frames) < beats_per_loop + 1:
         return y
     
-    # Find loop points
-    loop_start = beat_frames[0]
-    loop_end = beat_frames[beats_per_loop]
+    # Create output array
+    output = np.zeros_like(y)
     
-    # Extract loop
-    loop = y[loop_start:loop_end]
+    # Loop through beats and create loops
+    for i in range(len(beat_frames) - 1):
+        start = beat_frames[i]
+        end = beat_frames[i + 1]
+        beat_length = end - start
+        
+        # Determine loop start and end within the beat
+        loop_start = start + int(beat_length * (1 - loop_portion))
+        loop_end = end
+        
+        # Extract loop portion
+        loop = y[loop_start:loop_end]
+        
+        # Apply crossfade
+        crossfade_length = min(1024, len(loop) // 4)
+        fade_in = np.linspace(0, 1, crossfade_length)
+        fade_out = np.linspace(1, 0, crossfade_length)
+        
+        loop[-crossfade_length:] *= fade_out
+        loop[:crossfade_length] *= fade_in
+        
+        # Repeat loop portion
+        num_loops = int(np.ceil(beat_length / len(loop)))
+        loop_repeated = np.tile(loop, num_loops)[:beat_length]
+        
+        # Add to output
+        output[start:end] += loop_repeated
     
-    # Apply crossfade
-    crossfade_length = min(1024, len(loop) // 4)
-    fade_in = np.linspace(0, 1, crossfade_length)
-    fade_out = np.linspace(1, 0, crossfade_length)
-    
-    loop[-crossfade_length:] *= fade_out
-    loop[:crossfade_length] *= fade_in
-    
-    # Create output by repeating loop
-    num_loops = int(np.ceil(len(y) / len(loop)))
-    output = np.tile(loop, num_loops)[:len(y)]
-    
-    # Crossfade with original ending
-    fade_length = min(len(y) // 8, sr)  # 1/8th of audio or 1 second, whichever is shorter
-    output[-fade_length:] *= np.linspace(1, 0, fade_length)
-    y[-fade_length:] *= np.linspace(0, 1, fade_length)
-    output[-fade_length:] += y[-fade_length:]
-    
+    # Normalize
+    output = output / np.max(np.abs(output))
     return output
 
 def chop_and_rearrange(y, sr, beats, beats_per_chunk=2):
@@ -1092,13 +1101,17 @@ def parse_instructions(instructions):
     """Parse the instruction string into operations"""
     operations = []
     # Added mute and trig to the pattern
-    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+);?"
+    pattern = r"(mute|trig|chop|rev|speed|stut|echo|loop|rt|perc|copy|[ptr]):(-?\d*[.,]?\d+)(?::(-?\d*[.,]?\d+))?;?"
     matches = re.finditer(pattern, instructions)
 
     for match in matches:
-        cmd_type, value = match.groups()
+        cmd_type, value, value2 = match.groups()
         value = float(value.replace(',', '.'))
-        operations.append({'type': cmd_type, 'value': value})
+        if value2:
+            value2 = float(value2.replace(',', '.'))
+        else:
+            value2 = None
+        operations.append({'type': cmd_type, 'value': value, 'value2': value2})
 
     return operations
 
