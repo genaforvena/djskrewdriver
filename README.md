@@ -5,7 +5,7 @@ A Python-based audio manipulation tool that lets you experiment with track speed
 ## ✨ Features
 
 - Process local audio files or download directly from YouTube
-- Automatic BPM detection for rhythm-synchronized effects
+- Automatic BPM detection and matching for rhythm-synchronized effects
 - Multiple audio manipulation algorithms:
   - Pitch shifting (semitone-based adjustment using librosa.effects.pitch_shift)
   - Time stretching (using either librosa.effects.time_stretch or resampling method)
@@ -18,117 +18,172 @@ A Python-based audio manipulation tool that lets you experiment with track speed
 - Original loudness level matching
 - Unique audio artifacts through iterative processing
 
-## 🎮 Command Syntax
+## 💫 Usage
 
-Structure your audio manipulation instructions using this syntax:
-```
-command:value1:value2:value3;
-```
-Each command can have up to three values that control different aspects of the effect. All commands must end with a semicolon (;).
-
-### Basic Operations:
-- `p:X;` - Shift pitch by X semitones
-- `t:X;` - Time stretch with rate X using librosa.effects.time_stretch
-- `rt:X;` - Time stretch with rate X using resampling method
-- `r:X;` - Resample with rate X (affects both time and pitch)
-
-### Beat-Synchronized Effects:
-
-- **Loop (`loop:X:Y:Z;`)**
-  - X: Interval between loops (beats)
-  - Y: Length of each loop (beats)
-  - Z: Pattern repeat interval (beats)
-  - Example: `loop:1:12:2;` = Create loops every 1 beat, 12 beats long, repeating every 2 beats
-
-- **Chop (`chop:X:Y:Z;`)**
-  - X: Length of each chunk (beats)
-  - Y: Step size between chunks (beats)
-  - Z: Pattern repeat interval (beats)
-  - Example: `chop:2:12:4;` = 2-beat chunks, 12-beat step size, repeat every 4 beats
-
-- **Reverse (`rev:X:Y:Z;`)**
-  - X: Interval between reversals (beats)
-  - Y: Length of reversed section (beats)
-  - Z: Pattern repeat interval (beats)
-  - Example: `rev:1:12:3;` = Reverse every 1 beat, 12 beats per reversal, repeat every 3 beats
-
-- **Stutter (`stut:X:Y:Z;`)**
-  - X: Stutters per beat
-  - Y: Stutter length (beats)
-  - Z: Pattern repeat interval (beats)
-  - Example: `stut:2:1:4;` = 2 stutters per beat, 1 beat long, repeat every 4 beats
-
-- **Echo (`echo:X:Y:Z;`)**
-  - X: Delay time (seconds, 0 = auto)
-  - Y: Number of echoes
-  - Z: Echo decay rate
-  - Example: `echo:0.3:3:0.5;` = 300ms delay, 3 echoes, 0.5 decay rate
-
-For rate values:
-- 1.0 = original speed/pitch
-- 2.0 = double speed/higher pitch
-- 0.5 = half speed/lower pitch
-
-## 🎵 Example Commands
-
-1. Create layered beat-synchronized effects:
 ```bash
-loop:1:8:2;chop:2:4:1;echo:0.3:3:0.5;
-```
-This will:
-- Create 8-beat loops every beat, repeating every 2 beats
-- Chop into 2-beat chunks with 4-beat steps
-- Add echo with 300ms delay, 3 echoes, and 0.5 decay
+# Interactive mode
+python main.py
 
-2. Create complex rhythmic patterns:
-```bash
-rev:1:4:2;stut:2:1:4;loop:2:8:4;
-```
-This will:
-- Reverse every beat for 4 beats, repeating every 2 beats
-- Add 2 stutters per beat, 1 beat long, every 4 beats
-- Create 8-beat loops every 2 beats, repeating every 4 beats
+# Direct file processing
+python main.py input.mp3 "p:-2;rt:0.8;"
 
-3. Classic vaporwave effect with modern twist:
-```bash
-p:-5;rt:0.8;loop:2:16:4;echo:0.2:4:0.6;
+# YouTube processing
+python main.py https://youtube.com/watch?v=... "bpm:128;stut:2:1:2;"
 ```
-This will:
-- Lower pitch by 5 semitones
-- Slow down to 80% speed
-- Create 16-beat loops every 2 beats, repeating every 4 beats
-- Add echoes with 200ms delay, 4 echoes, and 0.6 decay
+
+### Playback Controls
+- **Space**: Play/Pause
+- **Up Arrow**: Restart playback
+- **Left Arrow**: Undo last operation
+- **Right Arrow**: Redo operation
+- **Enter**: Execute command
+- **s;**: Save current version
+- **q;**: Exit program
+
+## 🎮 Command Reference
+
+Each command follows the syntax: `command:value1:value2:value3;`
+
+### Basic Operations
+```
+p:X;              # Pitch shift (semitones)
+t:X;              # Time stretch (rate)
+rt:X;             # Resample time stretch (rate)
+r:X;              # Resample (rate)
+bpm:X;            # Match to target BPM
+```
+
+### Beat-Synchronized Effects
+
+#### Loop Effect (loop:interval:length:repeat;)
+Creates repeating loop patterns
+```bash
+loop:1:8:4;       # Create loops every beat, 8 beats long, repeat every 4 beats
+```
+- interval: Create loop every N beats
+- length: Number of beats to loop
+- repeat: Pattern repeats every N beats
+
+#### Chop Effect (chop:size:step:repeat;)
+Chops and rearranges audio in beat-sized chunks
+```bash
+chop:1:4:2;       # 1-beat chunks, 4-beat steps, repeat every 2 beats
+```
+- size: Length of each chunk in beats
+- step: Distance between chops
+- repeat: Pattern repeats every N beats
+
+#### Stutter Effect (stut:count:length:repeat;)
+Creates rapid repetitions of beat segments
+```bash
+stut:2:1:2;       # 2 stutters per beat, 1 beat long, repeat every 2 beats
+```
+- count: Number of stutters per beat
+- length: Length of stutter section
+- repeat: Pattern repeats every N beats
+
+#### Echo Effect (echo:delay:count:decay;)
+Adds tempo-synchronized echoes
+```bash
+echo:0.2:3:0.7;   # 200ms delay, 3 echoes, 0.7 decay rate
+```
+- delay: Time between echoes (seconds)
+- count: Number of echo repeats
+- decay: Volume reduction per echo (0-1)
+
+#### Reverse Effect (rev:interval:length:repeat;)
+Reverses audio in beat-synchronized chunks
+```bash
+rev:1:4:2;        # Reverse every beat, 4 beats long, repeat every 2 beats
+```
+- interval: Apply reverse every N beats
+- length: Length of reversed section
+- repeat: Pattern repeats every N beats
+
+#### Mash Effect (mash:parts:beats:repeat;)
+Randomly mixes beat segments
+```bash
+mash:4:2:4;       # Mix 4 parts every 2 beats, repeat every 4 beats
+```
+- parts: Number of segments to mix
+- beats: Beat length to process
+- repeat: Pattern repeats every N beats
+
+## 🎵 Creative Examples
+
+### Genre Transformations
+
+```bash
+# Vaporwave
+p:-5;rt:0.8;echo:0.3:3:0.7;loop:2:8:4;
+
+# Drill Beat
+bpm:140;stut:3:1:3;echo:0.1:4:0.9;loop:2:4:2;
+
+# DnB Rhythm
+bpm:174;chop:1:2:2;loop:2:8:4;stut:2:1:2;
+```
+
+### Sound Design
+
+```bash
+# Ghost Texture
+rt:0.25;p:-24;echo:0.4:8:0.99;rt:4.0;p:24;
+
+# Granular Cloud
+stut:16:1:1;echo:0.01:32:0.999;mash:8:1:1;
+
+# Time Crystal
+chop:1:1:1;stut:8:1:2;echo:0.05:16:0.99;
+```
+
+### Common Techniques
+
+#### Enhance Loudness
+```bash
+stut:4:1:2;echo:0.05:8:0.95;  # Stack amplitudes with tight timing
+```
+
+#### Create Complex Rhythm
+```bash
+chop:1:4:2;rev:2:4:2;loop:2:8:4;  # Chop, reverse, and loop for patterns
+```
+
+#### Transform Character
+```bash
+p:12;stut:4:1:1;echo:0.05:8:0.95;p:-12;  # Process harmonics then restore
+```
 
 ## 🔬 Technical Details
 
-- Automatic BPM detection for rhythmically coherent effects
 - Uses FFT-based analysis to maintain spectral characteristics
 - Implements spectrogram matching for frequency preservation
 - Preserves original loudness levels through RMS matching
 - Creates unique artifacts through multiple processing iterations
 - Beat-synchronized effects for musically coherent modifications
 - Crossfading between modified sections for smooth transitions
-- Perfect for experimental sound design and audio research
 
-## 💫 Usage
+## ⚠️ Best Practices
 
-Interactive mode:
+1. Process Order
 ```bash
-python main.py
+bpm:128;          # Global tempo first
+p:-2;             # Then pitch
+rt:0.9;           # Then time stretching
+loop:2:8:4;       # Then beat effects
+echo:0.2:3:0.7;   # Then details
 ```
 
-Direct file processing:
+2. Save Frequently
 ```bash
-python main.py path/to/your/audio.mp3
+effect:value;     # Test single effect
+s;               # Save if good
 ```
 
-YouTube processing:
-```bash
-python main.py https://youtube.com/watch?v=...
-```
-
-Then type your commands in the interactive prompt, ending each with a semicolon (;).
-Use space to play/pause, arrow keys to navigate history, and 's;' to save.
+3. Rate Values
+- 1.0 = original speed/pitch
+- 2.0 = double speed/higher pitch
+- 0.5 = half speed/lower pitch
 
 ## 📝 License
 
