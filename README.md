@@ -1,4 +1,5 @@
 DJ Screwdriver 👻
+
 A real-time audio manipulation tool designed for live performance and creative sound design. Perfect for DJs, producers, and sound artists looking to create unique remixes, transitions, and audio effects on the fly. Transform tracks with beat-synchronized effects, pitch/time manipulation, and experimental processing chains.
 🚀 Installation
 
