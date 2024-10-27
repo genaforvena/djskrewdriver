@@ -7,7 +7,7 @@ No coding knowledge needed! Just three easy steps to get mixing:
 ## 🚀 Setup (One Time Only)
 
 1. **Get DJ Screwdriver**
-   - Download the .zip file I sent you
+   - Download the .zip file u can download clicking on https://github.com/genaforvena/djskrewdriver/archive/refs/heads/master.zip
    - Unzip it anywhere on your computer
    - Remember where you put it!
 
