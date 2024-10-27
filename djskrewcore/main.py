@@ -91,7 +91,10 @@ class AudioPlayback:
     def play_callback(self, outdata, frames, time, status):
         if status:
             print(status)
-        if self.audio_data is None or self.current_position >= len(self.audio_data):
+        if self.audio_data is None:
+            outdata.fill(0)
+            return
+        if self.current_position >= len(self.audio_data):
             self.current_position = 0
         try:
             remaining = len(self.audio_data) - self.current_position
@@ -107,6 +110,9 @@ class AudioPlayback:
             outdata.fill(0)
             
     def start_playback(self, position=None):
+        if self.audio_data is None:
+            print("Error: Audio data is None. Cannot start playback.")
+            return
         if position is not None:
             self.current_position = min(position, len(self.audio_data))
         if hasattr(self, 'stream') and self.stream is not None:
