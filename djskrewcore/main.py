@@ -166,7 +166,7 @@ class AudioProcessor:
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
         sf.write(self.working_file, self.y, self.sr, format='WAV', subtype='PCM_16')
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
-        sf.write(self.working_file, self.y, self.sr, format='WAV')
+        sf.write(self.working_file, self.y, self.sr, format='WAV', subtype='PCM_16')
         self.playback = AudioPlayback(self.working_file, self.sr)
         self.history = AudioHistory()
         self.history.add(self.working_file, [])
