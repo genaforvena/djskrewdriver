@@ -64,14 +64,14 @@ def main():
             output_path = "."
             file_path = download_video(url, output_path)
         else:
-            file_path = arg
+            file_path = arg.strip("'\"")  # Ensure no quotes are present
         
         if len(sys.argv) > 2:
             commands = sys.argv[2]
     
     # Get file path if not provided
     if not file_path:
-        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
+        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ").strip("'\"")  # Ensure no quotes are present
         if not file_path:
             from djskrewcore.yt_downloader import download_video
             url = input("Enter the YouTube video URL: ")
