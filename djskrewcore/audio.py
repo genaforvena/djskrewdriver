@@ -12,6 +12,9 @@ import numpy as np
 import sounddevice as sd
 from djskrewcore.effects import AudioEffects
 import re
+import time
+import traceback
+from pydub import AudioSegment
 
 class AudioHistory:
     def __init__(self, max_size: int = 50):
@@ -188,51 +191,83 @@ class AudioProcessor:
                         del self.completion_callbacks[operation_id]
 
                 except Exception as e:
-                    print(f"Processing error: {str(e)}")
+                    print(f"Processing error for operation {operation_id}:")
+                    print(f"Input file: {input_file}")
+                    print(f"Output file: {output_file}")
+                    print(f"Operations: {operations}")
+                    print(f"Error details: {str(e)}")
+                    traceback.print_exc()
 
             except queue.Empty:
                 continue
 
     def _apply_effect(self, audio, sr, operation):
+        effect_type = operation['type']
+        values = operation['values']
+
         try:
-            effect_type = operation['type']
-            values = operation['values']
-            
             if effect_type == 'rt' and len(values) >= 1:
-                return AudioEffects.resample_time(audio, sr, rate=values[0])
+                return AudioEffects.resample_time(audio, sr, rate=float(values[0]))
             elif effect_type == 'a' and len(values) >= 1:
-                return AudioEffects.resample_time(audio, sr, rate=values[0])
+                return AudioEffects.resample_time(audio, sr, rate=float(values[0]))
             elif effect_type == 't' and len(values) >= 1:
-                return AudioEffects.time_stretch(audio, rate=values[0])
+                return AudioEffects.time_stretch(audio, rate=float(values[0]))
             elif effect_type == 'p' and len(values) >= 1:
-                return AudioEffects.pitch_shift(audio, sr, n_steps=values[0])
+                return AudioEffects.pitch_shift(audio, sr, n_steps=float(values[0]))
             elif effect_type == 'bpm' and len(values) >= 1:
+                target_bpm = float(values[0])
+                if target_bpm < 20:  # Set a minimum BPM threshold
+                    print(f"Warning: BPM value {target_bpm} is too low. Setting to minimum of 20 BPM.")
+                    target_bpm = 20
                 source_bpm = AudioEffects.estimate_bpm(audio, sr)
-                return AudioEffects.match_bpm(audio, sr, source_bpm, values[0])
+                return AudioEffects.match_bpm(audio, sr, source_bpm, target_bpm)
             elif effect_type == 'stut' and len(values) >= 4:
-                return AudioEffects.add_stutter(audio, sr, beats=values[0], count=values[1], length=values[2], repeat=values[3])
+                return AudioEffects.add_stutter(audio, sr, beats=int(values[0]), count=int(values[1]), length=float(values[2]), repeat=int(values[3]))
             elif effect_type == 'chop' and len(values) >= 4:
-                return AudioEffects.chop_and_rearrange(audio, sr, beats=values[0], size=values[1], step=values[2], repeat=values[3])
+                return AudioEffects.chop_and_rearrange(audio, sr, beats=int(values[0]), size=int(values[1]), step=int(values[2]), repeat=int(values[3]))
             elif effect_type == 'echo' and len(values) >= 3:
-                return AudioEffects.add_echo(audio, sr, delay=values[0], count=values[1], decay=values[2])
+                return AudioEffects.add_echo(audio, sr, delay=float(values[0]), count=int(values[1]), decay=float(values[2]))
             elif effect_type == 'mash' and len(values) >= 4:
-                return AudioEffects.random_mix_beats(audio, sr, beats=values[0], parts=values[1], beats_per_mash=values[2], repeat=values[3])
+                return AudioEffects.random_mix_beats(audio, sr, beats=int(values[0]), parts=int(values[1]), beats_per_mash=int(values[2]), repeat=int(values[3]))
             elif effect_type == 'loop' and len(values) >= 4:
-                return AudioEffects.create_loop(audio, sr, beats=values[0], interval=values[1], length=values[2], repeat=values[3])
+                return AudioEffects.create_loop(audio, sr, beats=int(values[0]), interval=int(values[1]), length=int(values[2]), repeat=int(values[3]))
             elif effect_type == 'rev' and len(values) >= 4:
-                return AudioEffects.reverse_by_beats(audio, sr, beats=values[0], interval=values[1], length=values[2], repeat=values[3])
-            
-            print(f"Warning: Operation {effect_type} requires more parameters.")
+                return AudioEffects.reverse_by_beats(audio, sr, beats=int(values[0]), interval=int(values[1]), length=int(values[2]), repeat=int(values[3]))
+            else:
+                print(f"Warning: Unknown operation '{effect_type}' or insufficient parameters.")
+                return audio
+
+        except ValueError as ve:
+            print(f"Error in {effect_type} effect: Invalid parameter value.")
+            print(f"Details: {str(ve)}")
+            print(f"Provided values: {values}")
+            print("This might be due to incompatible audio length, beat settings, or incorrect parameter types.")
             return audio
+
+        except TypeError as te:
+            print(f"Error in {effect_type} effect: Incorrect parameter type.")
+            print(f"Details: {str(te)}")
+            print(f"Provided values: {values}")
+            print("Please check that all parameters are of the correct type (int, float, etc.).")
+            return audio
+
         except Exception as e:
-            print(f"Effect application error ({effect_type}): {str(e)}")
+            print(f"Unexpected error in {effect_type} effect:")
+            print(f"Details: {str(e)}")
+            print(f"Provided values: {values}")
+            print("Stack trace:")
+            traceback.print_exc()
             return audio
 
 class AudioManager:
     def __init__(self, input_file: str):
+        self.input_file = input_file
+        self.y, self.sr = librosa.load(input_file, sr=None)
+        self.working_audio = np.copy(self.y)
         self.temp_dir = tempfile.mkdtemp()
-        self.original_file = input_file
-        self.y, self.sr = librosa.load(input_file)
+        self.history = []
+        self.undo_stack = []
+        self.redo_stack = []
         
         # Initialize components
         self.player = AudioPlayer(self.sr)
@@ -277,20 +312,23 @@ class AudioManager:
 
     def _process_operations(self, operations: List[Dict[str, Any]]) -> None:
         def process_complete(output_file: str) -> None:
-            # Always add the new operations to the history
             self.history.add(output_file, operations)
-            self.player.load_audio(output_file)  # Reload the player with the new audio
+            self.player.load_audio(output_file)
             print("Track updated successfully with the following operations:")
             for op in operations:
                 print(op)
 
-        # Process each operation sequentially
+        current_input = self.working_file
         for operation in operations:
-            self.working_file = self.processor.process_audio(
-                self.working_file,
-                [operation],  # Process one operation at a time
+            operation_id = self.processor.process_audio(
+                current_input,
+                [operation],
                 process_complete
             )
+            # Wait for the operation to complete
+            while operation_id in self.processor.completion_callbacks:
+                time.sleep(1)
+            current_input = self.working_file
 
     def cleanup(self) -> None:
         try:
@@ -332,25 +370,31 @@ class AudioManager:
         return re.sub(r'[^\w\s-]', '', filename).strip().replace(' ', '_')
 
     def _save_current_state(self) -> None:
-        # Get the directory of the cli.py script
         script_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Define the processed folder path in the same directory as cli.py
         processed_folder = os.path.join(script_dir, "processed")
         os.makedirs(processed_folder, exist_ok=True)
 
-        # Sanitize the original file name
-        base_name = os.path.basename(self.original_file)
+        base_name = os.path.basename(self.input_file)
         name_without_extension = os.path.splitext(base_name)[0]
         sanitized_name = self._sanitize_filename(name_without_extension)
 
-        # Create a file name using the change counter and sanitized source name
-        file_name = f"processed_{self.change_counter}_{sanitized_name}.wav"
-        saved_file_path = os.path.join(processed_folder, file_name)
+        # Save WAV file
+        wav_file_name = f"processed_{self.change_counter}_{sanitized_name}.wav"
+        wav_file_path = os.path.join(processed_folder, wav_file_name)
+        shutil.copy2(self.working_file, wav_file_path)
+        print(f"Current state saved as WAV: {wav_file_path}")
 
-        # Copy the current working file to the processed folder
-        shutil.copy2(self.working_file, saved_file_path)
-        print(f"Current state saved to {saved_file_path}.")
+        # Save MP3 file
+        mp3_file_name = f"processed_{self.change_counter}_{sanitized_name}.mp3"
+        mp3_file_path = os.path.join(processed_folder, mp3_file_name)
+        
+        # Convert WAV to MP3
+        audio = AudioSegment.from_wav(wav_file_path)
+        audio.export(mp3_file_path, format="mp3")
+        print(f"Current state saved as MP3: {mp3_file_path}")
+
+        # Increment the change counter after saving
+        self.change_counter += 1
 
     def _get_operations_history(self):
         operations_history = self.history.get_operations_history()
