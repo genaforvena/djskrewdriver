@@ -312,11 +312,9 @@ class AudioManager:
 
     def _process_operations(self, operations: List[Dict[str, Any]]) -> None:
         def process_complete(output_file: str) -> None:
-            self.history.add(output_file, operations)
+            self.working_file = output_file
             self.player.load_audio(output_file)
-            print("Track updated successfully with the following operations:")
-            for op in operations:
-                print(op)
+            print("Operation completed successfully.")
 
         current_input = self.working_file
         for operation in operations:
@@ -327,8 +325,14 @@ class AudioManager:
             )
             # Wait for the operation to complete
             while operation_id in self.processor.completion_callbacks:
-                time.sleep(1)
+                time.sleep(0.1)
             current_input = self.working_file
+
+        # After all operations are complete, update history
+        self.history.add(self.working_file, operations)
+        print("Track updated successfully with the following operations:")
+        for op in operations:
+            print(op)
 
     def cleanup(self) -> None:
         try:
