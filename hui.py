@@ -139,11 +139,12 @@ class FriendlyAudioCLI:
 
     def run(self, file_path: Optional[str] = None):
         # Get file path if not provided
+
         if not file_path:
-            file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
-            if not file_path:
+            file_path = input("Enter the path to your audio file or url to download from YouTube: ")
+            if "http" in file_path:
                 from djskrewcore.yt_downloader import download_video
-                url = input("Enter the YouTube video URL: ")
+                url = file_path
                 output_path = "."
                 file_path = download_video(url, output_path)
 
