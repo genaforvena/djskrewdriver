@@ -186,8 +186,11 @@ class AudioProcessor:
                 print("\nChanges applied.")
                 return True
             elif command == 'p':
-                self.playback.toggle_playback()
-                print("\nPlayback toggled.")
+                if self.playback:
+                    self.playback.toggle_playback()
+                    print("\nPlayback toggled.")
+                else:
+                    print("Playback instance not initialized.")
                 return True
             elif command == 'u':
                 self.undo()
