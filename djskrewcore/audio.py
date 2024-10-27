@@ -259,8 +259,12 @@ def parse_instructions(instructions):
         if ':' in part:
             cmd, *args = part.split(':')  # Use unpacking to handle multiple arguments
             values = [float(arg.replace(',', '.')) for arg in args if arg]  # Convert arguments to float
-            operations.append({'type': cmd, 'values': values})
-            print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
+            if cmd == 'p' and len(values) == 1:
+                operations.append({'type': cmd, 'values': values})
+                print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
+            else:
+                operations.append({'type': cmd, 'values': values})
+                print(f"Operation: {{'type': {cmd}, 'values': {values}}}")
         else:
             if part:  # Ensure the part is not empty
                 operations.append({'type': part, 'values': []})
