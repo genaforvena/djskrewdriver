@@ -164,7 +164,7 @@ class AudioProcessor:
             print(f"Warning: Failed to load audio data from file: {file_path}. Using empty audio data.")
             self.y = np.zeros((1024, 1), dtype='float32')
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
-        sf.write(self.working_file, self.y, self.sr, format='WAV')
+        sf.write(self.working_file, self.y, self.sr, format='WAV', subtype='PCM_16')
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
         sf.write(self.working_file, self.y, self.sr, format='WAV')
         self.playback = AudioPlayback(self.working_file, self.sr)
