@@ -154,6 +154,9 @@ class AudioProcessor:
         self.history = AudioHistory()
         self.history.add(self.working_file, [])
         self.input_buffer = ""
+        self.playback_thread = threading.Thread(target=self.playback.start_playback)
+        self.playback_thread.daemon = True
+        self.playback_thread.start()
 
     def load_commands(self):
         commands = {}
