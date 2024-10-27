@@ -11,6 +11,7 @@ import soundfile as sf
 import numpy as np
 import sounddevice as sd
 from djskrewcore.effects import AudioEffects
+import re
 
 class AudioHistory:
     def __init__(self, max_size: int = 50):
@@ -192,37 +193,36 @@ class AudioProcessor:
             except queue.Empty:
                 continue
 
-    def _apply_effect(self, audio: np.ndarray, sr: int, 
-                     operation: Dict[str, Any]) -> np.ndarray:
+    def _apply_effect(self, audio, sr, operation):
         try:
             effect_type = operation['type']
             values = operation['values']
             
-            if effect_type == 'rt':
+            if effect_type == 'rt' and len(values) >= 1:
                 return AudioEffects.resample_time(audio, sr, rate=values[0])
-            elif effect_type == 'a':
-                rate = values[0] if values else 1.0
-                return AudioEffects.resample_time(audio, sr, rate=rate)
-            elif effect_type == 't':
+            elif effect_type == 'a' and len(values) >= 1:
+                return AudioEffects.resample_time(audio, sr, rate=values[0])
+            elif effect_type == 't' and len(values) >= 1:
                 return AudioEffects.time_stretch(audio, rate=values[0])
-            elif effect_type == 'p':
+            elif effect_type == 'p' and len(values) >= 1:
                 return AudioEffects.pitch_shift(audio, sr, n_steps=values[0])
-            elif effect_type == 'bpm':
+            elif effect_type == 'bpm' and len(values) >= 1:
                 source_bpm = AudioEffects.estimate_bpm(audio, sr)
                 return AudioEffects.match_bpm(audio, sr, source_bpm, values[0])
-            elif effect_type == 'stut':
+            elif effect_type == 'stut' and len(values) >= 4:
                 return AudioEffects.add_stutter(audio, sr, beats=values[0], count=values[1], length=values[2], repeat=values[3])
-            elif effect_type == 'chop':
+            elif effect_type == 'chop' and len(values) >= 4:
                 return AudioEffects.chop_and_rearrange(audio, sr, beats=values[0], size=values[1], step=values[2], repeat=values[3])
-            elif effect_type == 'echo':
+            elif effect_type == 'echo' and len(values) >= 3:
                 return AudioEffects.add_echo(audio, sr, delay=values[0], count=values[1], decay=values[2])
-            elif effect_type == 'mash':
+            elif effect_type == 'mash' and len(values) >= 4:
                 return AudioEffects.random_mix_beats(audio, sr, beats=values[0], parts=values[1], beats_per_mash=values[2], repeat=values[3])
-            elif effect_type == 'loop':
+            elif effect_type == 'loop' and len(values) >= 4:
                 return AudioEffects.create_loop(audio, sr, beats=values[0], interval=values[1], length=values[2], repeat=values[3])
-            elif effect_type == 'rev':
+            elif effect_type == 'rev' and len(values) >= 4:
                 return AudioEffects.reverse_by_beats(audio, sr, beats=values[0], interval=values[1], length=values[2], repeat=values[3])
             
+            print(f"Warning: Operation {effect_type} requires more parameters.")
             return audio
         except Exception as e:
             print(f"Effect application error ({effect_type}): {str(e)}")
@@ -244,6 +244,7 @@ class AudioManager:
         sf.write(self.working_file, self.y, self.sr)
         self.player.load_audio(self.working_file)
         self.history.add(self.working_file, [])
+        self.change_counter = 0
 
     def process_instructions(self, instructions: str) -> bool:
         # Handle special commands
@@ -278,13 +279,18 @@ class AudioManager:
         def process_complete(output_file: str) -> None:
             # Always add the new operations to the history
             self.history.add(output_file, operations)
-            self.player.load_audio(output_file)
+            self.player.load_audio(output_file)  # Reload the player with the new audio
+            print("Track updated successfully with the following operations:")
+            for op in operations:
+                print(op)
 
-        self.processor.process_audio(
-            self.working_file,
-            operations,
-            process_complete
-        )
+        # Process each operation sequentially
+        for operation in operations:
+            self.working_file = self.processor.process_audio(
+                self.working_file,
+                [operation],  # Process one operation at a time
+                process_complete
+            )
 
     def cleanup(self) -> None:
         try:
@@ -321,8 +327,28 @@ class AudioManager:
         else:
             print("No more redos available.")
 
+    def _sanitize_filename(self, filename: str) -> str:
+        # Remove or replace any characters that are not suitable for file names
+        return re.sub(r'[^\w\s-]', '', filename).strip().replace(' ', '_')
+
     def _save_current_state(self) -> None:
-        saved_file_path = os.path.join(self.temp_dir, f"saved_{datetime.now().strftime('%Y%m%d%H%M%S')}.wav")
+        # Get the directory of the cli.py script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Define the processed folder path in the same directory as cli.py
+        processed_folder = os.path.join(script_dir, "processed")
+        os.makedirs(processed_folder, exist_ok=True)
+
+        # Sanitize the original file name
+        base_name = os.path.basename(self.original_file)
+        name_without_extension = os.path.splitext(base_name)[0]
+        sanitized_name = self._sanitize_filename(name_without_extension)
+
+        # Create a file name using the change counter and sanitized source name
+        file_name = f"processed_{self.change_counter}_{sanitized_name}.wav"
+        saved_file_path = os.path.join(processed_folder, file_name)
+
+        # Copy the current working file to the processed folder
         shutil.copy2(self.working_file, saved_file_path)
         print(f"Current state saved to {saved_file_path}.")
 
