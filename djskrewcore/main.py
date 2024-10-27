@@ -10,7 +10,7 @@ from collections import deque
 from .audio import *
 import tempfile
 import shutil
-import scipy.signal
+from scipy.signal import hann
 
 class AudioHistory:
     def __init__(self, max_size=50):
@@ -161,6 +161,8 @@ class AudioProcessor:
         self.y, self.sr = librosa.load(file_path)
         if self.y is None:
             raise ValueError(f"Failed to load audio data from file: {file_path}")
+        self.working_file = os.path.join(self.temp_dir, 'working.wav')
+        sf.write(self.working_file, self.y, self.sr)
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
         sf.write(self.working_file, self.y, self.sr)
         self.playback = AudioPlayback(self.working_file, self.sr)
