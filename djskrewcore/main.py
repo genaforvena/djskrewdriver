@@ -10,6 +10,7 @@ from collections import deque
 from .audio import *
 import tempfile
 import shutil
+import scipy.signal
 
 class AudioHistory:
     def __init__(self, max_size=50):
@@ -71,6 +72,8 @@ class AudioPlayback:
             self.current_file_path = file_path
             try:
                 audio_data, sr = sf.read(file_path, dtype='float32')
+                if audio_data is None:
+                    raise ValueError("Audio data is None")
                 if len(audio_data.shape) == 1:
                     self.audio_data = audio_data.reshape(-1, 1)
                 else:
