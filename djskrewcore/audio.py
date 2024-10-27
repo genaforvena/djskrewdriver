@@ -162,10 +162,23 @@ class AudioProcessor:
             operation_id = self.current_operation_id
             self.current_operation_id += 1
             
-            output_file = os.path.join(
-                self.temp_dir, 
-                f"processed_{operation_id}_{os.path.basename(input_file)}"
-            )
+            # Extract the base name of the input file
+            base_name = os.path.basename(input_file)
+            name_without_extension = os.path.splitext(base_name)[0]
+            
+            # Check if the name already contains the remix suffix
+            if "(djskrewdriver remix)" not in name_without_extension:
+                remix_name = f"{name_without_extension} (djskrewdriver remix)"
+            else:
+                remix_name = name_without_extension
+            
+            output_file = os.path.join(self.temp_dir, f"{remix_name}.wav")
+            
+            # Check if a file with the same name exists and append an index if necessary
+            index = 1
+            while os.path.exists(output_file):
+                output_file = os.path.join(self.temp_dir, f"{remix_name} {index}.wav")
+                index += 1
             
             self.completion_callbacks[operation_id] = callback
             self.processing_queue.put((operation_id, input_file, output_file, operations))
