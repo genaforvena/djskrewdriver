@@ -60,6 +60,7 @@ def main():
         arg = sys.argv[1].strip("'\"")  # Remove quotes from the file path
         if ' ' in arg:
             arg = f'"{arg}"'  # Add double quotes around the file path if it contains spaces
+        file_path = arg.strip('"')  # Ensure no quotes are present
         if arg.startswith('https'):
             from djskrewcore.yt_downloader import download_video
             url = arg
