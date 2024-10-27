@@ -1,43 +1,63 @@
+from typing import Optional
 import sys
 import threading
 import time
+import queue
+from djskrewcore.audio import AudioManager
 
 class InputHandler:
-    def __init__(self, processor):
-        """Initialize the input handler with an audio processor"""
-        self.processor = processor
-        self.command_buffer = ""
+    def __init__(self, audio_manager):
+        self.audio_manager = audio_manager
+        self.command_queue = queue.Queue()
         self.running = True
-    
+        self._input_thread = threading.Thread(target=self._input_loop)
+        self._command_thread = threading.Thread(target=self._command_loop)
+        self._input_thread.daemon = True
+        self._command_thread.daemon = True
+
     def start(self):
-        """Start the input handler"""
+        """Start the input handler threads"""
+        self._input_thread.start()
+        self._command_thread.start()
+
+    def stop(self):
+        """Stop the input handler"""
+        self.running = False
+        self.command_queue.put(None)  # Signal to stop command thread
+
+    def _input_loop(self):
+        """Handle user input in a separate thread"""
         try:
             while self.running:
                 command = input("> ").strip()
                 if command:
-                    self._handle_command(command)
-        except KeyboardInterrupt:
+                    self.command_queue.put(command)
+        except (KeyboardInterrupt, EOFError):
             self.stop()
-    
-    def stop(self):
-        """Stop the input handler"""
-        self.running = False
-    
-    def _handle_command(self, command):
-        """Process a command string"""
-        # Process the command through the audio processor
-        try:
-            if not self.processor.process_instructions(command):
-                self.running = False
-        except Exception as e:
-            print(f"Error processing command: {str(e)}")
+
+    def _command_loop(self):
+        """Process commands in a separate thread"""
+        while self.running:
+            try:
+                command = self.command_queue.get(timeout=0.5)
+                if command is None:
+                    break
+                try:
+                    if not self.audio_manager.process_instructions(command):
+                        self.running = False
+                except Exception as e:
+                    print(f"Error processing command: {str(e)}")
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Command thread error: {str(e)}")
+                continue
 
 def print_controls():
     """Print available controls"""
     print("\nControls:")
     print("q; - Quit the program")
     print("s; - Save current state")
-    print("a; - Apply changes")
     print("p; - Toggle playback")
     print("u; - Undo last operation")
     print("r; - Redo last undone operation")
@@ -57,57 +77,55 @@ def main():
     commands = None
     
     if len(sys.argv) > 1:
-        arg = sys.argv[1].strip("'\"")  # Remove quotes from the file path
-        file_path = arg.strip('"')  # Ensure no quotes are present
+        arg = sys.argv[1]
         if arg.startswith('https'):
             from djskrewcore.yt_downloader import download_video
             url = arg
             output_path = "."
             file_path = download_video(url, output_path)
         else:
-            file_path = arg  # Ensure no quotes are present
+            file_path = arg
         
         if len(sys.argv) > 2:
             commands = sys.argv[2]
     
     # Get file path if not provided
     if not file_path:
-        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")  # Ensure no quotes are present
+        file_path = input("Enter the path to your audio file (or leave blank to download from YouTube): ")
         if not file_path:
             from djskrewcore.yt_downloader import download_video
             url = input("Enter the YouTube video URL: ")
             output_path = "."
             file_path = download_video(url, output_path)
-            if not file_path:
-                raise FileNotFoundError("Failed to download the video.")
 
-    # Create audio processor
-    from djskrewcore.main import AudioProcessor
-    processor = AudioProcessor(file_path)
+    # Create audio manager
+    audio_manager = AudioManager(file_path)
     print(f"\nLoaded audio file: {file_path}")
     
     # Handle command-line commands
     if commands:
         print(f"Processing commands: {commands}")
-        processor.process_instructions(commands)
-        processor.save_current_state()
+        audio_manager.process_instructions(commands)
+        audio_manager.save_current_state()
         print("\nProcessing complete. File saved.")
-        processor.cleanup()
+        audio_manager.cleanup()
         return
     
     # Enter interactive mode
     print_controls()
     
     # Create and start input handler
-    handler = InputHandler(processor)
+    handler = InputHandler(audio_manager)
     try:
         handler.start()
-    except Exception as e:
-        print(f"Error in input handler: {str(e)}")
+        # Keep main thread alive
+        while handler.running:
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print("\nExiting...")
     finally:
         handler.stop()
-        processor.cleanup()
-        print("\nExiting...")
+        audio_manager.cleanup()
 
 if __name__ == "__main__":
     main()
