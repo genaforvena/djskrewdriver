@@ -55,12 +55,12 @@ pip install librosa soundfile numpy sounddevice keyboard pydub
 ```
 3. Download DJ Screwdriver:
 ```bash
-git clone https://github.com/yourusername/djscrewdriver.git
+git clone https://github.com/genaforvena/djscrewdriver.git
 cd djscrewdriver
 ```
 4. Start processing:
 ```bash
-python main.py your_track.mp3
+python hui.py your_track.mp3
 ```
 
 ## 🎹 Performance Tips
