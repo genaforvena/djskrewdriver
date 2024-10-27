@@ -62,7 +62,7 @@ class AudioPlayback:
         self.stream = None
         self.audio_data = None
         self.current_position = 0
-        self.current_file_path = None  # Initialize current_file_path
+        self.current_file_path = file_path  # Initialize current_file_path
         self.load_audio(file_path)
         
     def load_audio(self, file_path):
