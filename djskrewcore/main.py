@@ -91,8 +91,8 @@ class AudioPlayback:
     def play_callback(self, outdata, frames, time, status):
         if status:
             print(status)
-        if self.audio_data is None:
-            print("Error: Audio data is None. Cannot continue playback.")
+        if self.audio_data is None or len(self.audio_data) == 0:
+            print("Error: Audio data is None or empty. Cannot continue playback.")
             outdata.fill(0)
             return
         if self.current_position >= len(self.audio_data):
@@ -158,8 +158,8 @@ class AudioProcessor:
         self.commands = self.load_commands()
         self.original_file = file_path
         self.temp_dir = tempfile.mkdtemp()
-        self.y, self.sr = librosa.load(file_path)
-        if self.y is None:
+        self.y, self.sr = librosa.load(file_path, sr=None, mono=False)
+        if self.y is None or len(self.y) == 0:
             raise ValueError(f"Failed to load audio data from file: {file_path}")
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
         sf.write(self.working_file, self.y, self.sr)

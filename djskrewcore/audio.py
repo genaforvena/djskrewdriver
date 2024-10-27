@@ -6,7 +6,7 @@ import sys
 import sounddevice as sd
 from datetime import datetime
 from collections import deque
-import scipy.signal
+from scipy.signal import hann
 
 class AudioEffects:
     @staticmethod
