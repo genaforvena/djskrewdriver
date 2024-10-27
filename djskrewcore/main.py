@@ -10,7 +10,7 @@ from collections import deque
 from .audio import *
 import tempfile
 import shutil
-from scipy.signal import hann
+from scipy.signal.windows import hann
 
 class AudioHistory:
     def __init__(self, max_size=50):
