@@ -330,22 +330,6 @@ class AudioProcessor:
 
         return y
 
-    def process_input(self):
-        while True:
-            command = input("> ").strip()
-            if command:
-                if command in self.commands:
-                    command = self.commands[command]
-                instructions = command.split(';')
-                for instruction in instructions:
-                    if instruction:
-                        operations = self.parse_instructions(instruction + ';')
-                        if operations:
-                            self.execute_operations(operations)
-                        else:
-                            print("\nNo valid instructions found. Please check your input.")
-
-        return True
     
     def save_current_state(self):
         processed_dir = 'processed'
