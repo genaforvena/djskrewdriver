@@ -162,7 +162,7 @@ class AudioProcessor:
         if self.y is None or len(self.y) == 0:
             raise ValueError(f"Failed to load audio data from file: {file_path}")
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
-        sf.write(self.working_file, self.y, self.sr)
+        sf.write(self.working_file, self.y, self.sr, format='WAV')
         self.working_file = os.path.join(self.temp_dir, 'working.wav')
         sf.write(self.working_file, self.y, self.sr)
         self.playback = AudioPlayback(self.working_file, self.sr)
