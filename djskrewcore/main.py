@@ -453,6 +453,10 @@ class AudioProcessor:
         else:
             print(f"\nFile not found: {new_file}")
 
+    def notify_playback(self, new_file_path):
+        """Notify the playback instance that a new file is ready."""
+        self.playback.new_file_available(new_file_path)
+
     def print_help(self):
         print("\nAvailable commands:")
         print("q; - Quit the program")
