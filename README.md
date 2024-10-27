@@ -2,8 +2,9 @@
 
 A real-time audio manipulation tool designed for live performance and creative sound design. Perfect for DJs, producers, and sound artists looking to create unique remixes, transitions, and audio effects on the fly. Transform tracks with beat-synchronized effects, pitch/time manipulation, and experimental processing chains.
 
-
 Turn any track into a master piece of pure shit. Perfect for DJs who want to make shit music.
+
+Tutorial: [dj-cookbook.md](dj-cookbook.md)
 
 ## 🎵 What You Can Do
 
