@@ -77,6 +77,8 @@ def main():
             url = input("Enter the YouTube video URL: ")
             output_path = "."
             file_path = download_video(url, output_path)
+            if not file_path:
+                raise FileNotFoundError("Failed to download the video.")
 
     # Create audio processor
     from djskrewcore.main import AudioProcessor
