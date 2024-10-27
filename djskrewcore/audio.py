@@ -30,7 +30,8 @@ class AudioHistory:
             self.current_index = len(self.history) - 1
         
     def can_undo(self) -> bool:
-        return self.current_index > 0
+        # Allow undo if current_index is greater than or equal to 0
+        return self.current_index >= 0
         
     def can_redo(self) -> bool:
         return self.current_index < len(self.history) - 1
