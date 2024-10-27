@@ -2,6 +2,95 @@
 
 A guide to making your tracks hit harder, mix smoother, and sound unique. No computer science degree required!
 
+No coding knowledge needed! Just three easy steps to get mixing:
+
+## 🚀 Setup (One Time Only)
+
+1. **Get DJ Screwdriver**
+   - Download the .zip file I sent you
+   - Unzip it anywhere on your computer
+   - Remember where you put it!
+
+2. **Install the Tools**
+   ### Windows:
+   - Press `Win + R` on your keyboard
+   - Type `cmd` and press Enter
+   - Copy this WHOLE line and paste it (right-click to paste):
+     ```
+     pip install librosa soundfile numpy sounddevice keyboard pydub
+     ```
+   - Press Enter and wait until it's done
+
+   ### Mac:
+   - Press `Cmd + Space`
+   - Type "Terminal" and press Enter
+   - Copy and paste this line:
+     ```
+     pip install librosa soundfile numpy sounddevice keyboard pydub
+     ```
+   - Press Enter and wait until it's done
+
+## 💫 Running DJ Screwdriver
+
+### Windows
+1. Open the folder where you unzipped DJ Screwdriver
+2. Hold `Shift` and `Right-Click` in the empty space
+3. Click "Open PowerShell window here" or "Open command window here"
+4. Type this and press Enter:
+   ```
+   python hui.py
+   ```
+5. When asked, drag & drop your audio file into the window
+
+### Mac
+1. Open Terminal (Cmd + Space, type "Terminal")
+2. Type `cd ` (with a space after cd)
+3. Drag the DJ Screwdriver folder into Terminal
+4. Press Enter
+5. Type:
+   ```
+   python hui.py
+   ```
+6. When asked, drag & drop your audio file into Terminal
+
+## 🎮 Start Creating!
+
+Once running, you'll see this simple menu:
+```
+=== Main Menu ===
+e: Add an effect
+p: Play/Pause
+u: Undo
+r: Redo
+s: Save your edit
+q: Quit
+```
+
+Just press 'e' and follow the prompts to start transforming your tracks!
+
+## ⚡ Quick Tips
+- Works with MP3s and WAVs
+- Can also use YouTube links
+- Press 'u' to undo any effect you don't like
+- Press 's' to save your edit
+- Press 'q' to quit
+
+## 🆘 Common Issues & Fixes
+
+If you get any errors about Python or pip:
+- Let me know and I'll help you install Python!
+
+### "Permission denied"
+- Run PowerShell/Terminal as Administrator (right-click, Run as Administrator)
+
+### "Module not found"
+- Run the pip install command again
+
+### Anything else?
+- Hit me up, I'll help you get it running!
+
+Now you're ready to check out the Cookbook and start creating! 🎉
+
 ## 🎵 How Sound Gets Transformed
 
 Think of your track like clay - each effect molds it in a different way:
