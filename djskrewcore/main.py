@@ -65,17 +65,19 @@ class AudioPlayback:
         self.load_audio(file_path)
         
     def load_audio(self, file_path):
-        try:
-            audio_data, sr = sf.read(file_path, dtype='float32')
-            if len(audio_data.shape) == 1:
-                self.audio_data = audio_data.reshape(-1, 1)
-            else:
-                self.audio_data = audio_data
-            self.current_position = min(self.current_position, len(self.audio_data)) if hasattr(self, 'current_position') else 0
-        except Exception as e:
-            print(f"Error loading audio: {str(e)}")
-            self.audio_data = np.zeros((1024, 1), dtype='float32')
-            self.current_position = 0
+        if self.current_file_path != file_path:
+            self.current_file_path = file_path
+            try:
+                audio_data, sr = sf.read(file_path, dtype='float32')
+                if len(audio_data.shape) == 1:
+                    self.audio_data = audio_data.reshape(-1, 1)
+                else:
+                    self.audio_data = audio_data
+                self.current_position = min(self.current_position, len(self.audio_data)) if hasattr(self, 'current_position') else 0
+            except Exception as e:
+                print(f"Error loading audio: {str(e)}")
+                self.audio_data = np.zeros((1024, 1), dtype='float32')
+                self.current_position = 0
         
     def play_callback(self, outdata, frames, time, status):
         if status:
@@ -235,7 +237,7 @@ class AudioProcessor:
             sf.write(temp_file, y, sr)
             
             self.history.add(temp_file, operations)
-            shutil.copy2(temp_file, self.working_file)
+            self.working_file = temp_file
             
             self.playback.load_audio(self.working_file)
             
