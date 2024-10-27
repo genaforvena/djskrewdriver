@@ -79,6 +79,10 @@ class AudioPlayback:
                 print(f"Error loading audio: {str(e)}")
                 self.audio_data = np.zeros((1024, 1), dtype='float32')
                 self.current_position = 0
+
+    def new_file_available(self, new_file_path):
+        """Reload audio data only when a new file is available."""
+        self.load_audio(new_file_path)
         
     def play_callback(self, outdata, frames, time, status):
         if status:
@@ -240,7 +244,7 @@ class AudioProcessor:
             self.history.add(temp_file, operations)
             self.working_file = temp_file
             
-            self.playback.load_audio(self.working_file)
+            self.notify_playback(self.working_file)
             
             if was_playing:
                 self.playback.start_playback(position)
@@ -472,3 +476,6 @@ def too_long_name_truncation(name, max_length=200):
     
     # Keep the first and last parts, and truncate the middle
     return f"{parts[0]}_{parts[1]}_.._{parts[-2]}_{parts[-1]}"
+    def notify_playback(self, new_file_path):
+        """Notify the playback instance that a new file is ready."""
+        self.playback.new_file_available(new_file_path)
