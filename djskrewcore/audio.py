@@ -162,11 +162,9 @@ class AudioProcessor:
             operation_id = self.current_operation_id
             self.current_operation_id += 1
             
-            # Extract the base name of the input file
             base_name = os.path.basename(input_file)
             name_without_extension = os.path.splitext(base_name)[0]
             
-            # Check if the name already contains the remix suffix
             if "(djskrewdriver remix)" not in name_without_extension:
                 remix_name = f"{name_without_extension} (djskrewdriver remix)"
             else:
@@ -174,7 +172,6 @@ class AudioProcessor:
             
             output_file = os.path.join(self.temp_dir, f"{remix_name}.wav")
             
-            # Check if a file with the same name exists and append an index if necessary
             index = 1
             while os.path.exists(output_file):
                 output_file = os.path.join(self.temp_dir, f"{remix_name} {index}.wav")
@@ -194,8 +191,12 @@ class AudioProcessor:
                     y, sr = librosa.load(input_file, sr=None)
                     modified_audio = np.copy(y)
 
+                    # Apply the requested effects
                     for operation in operations:
                         modified_audio = self._apply_effect(modified_audio, sr, operation)
+
+                    # Post-processing for quality improvement
+                    modified_audio = self._enhance_audio_quality(modified_audio, y, sr)
 
                     sf.write(output_file, modified_audio, sr)
 
@@ -214,6 +215,52 @@ class AudioProcessor:
 
             except queue.Empty:
                 continue
+
+    def _enhance_audio_quality(self, modified_audio: np.ndarray, original_audio: np.ndarray, sr: int) -> np.ndarray:
+        """
+        Enhance the audio quality through multiple stages of processing
+        """
+        try:
+            # 1. Apply spectral gating to reduce noise
+            # Preserve important frequency ranges (bass, mids, highs)
+            preserved_ranges = [
+                (20, 120),    # Sub-bass
+                (120, 400),   # Bass
+                (400, 2000),  # Mids
+                (2000, 8000)  # Highs
+            ]
+            modified_audio = AudioEffects.spectral_gate(
+                modified_audio, 
+                sr, 
+                threshold_db=-50,
+                preserve_freq_ranges=preserved_ranges
+            )
+
+            # 2. Match the frequency profile of the original
+            modified_audio = AudioEffects.match_frequency_profile(
+                modified_audio,
+                original_audio,
+                sr
+            )
+
+            # 3. Normalize loudness to match original
+            modified_audio = AudioEffects.match_loudness(
+                modified_audio,
+                original_audio,
+                sr
+            )
+
+            # 4. Final peak normalization to prevent clipping
+            max_amplitude = np.max(np.abs(modified_audio))
+            if max_amplitude > 0.99:
+                modified_audio = modified_audio * (0.99 / max_amplitude)
+
+            return modified_audio
+
+        except Exception as e:
+            print(f"Warning: Audio quality enhancement failed: {str(e)}")
+            print("Falling back to original modified audio")
+            return modified_audio
 
     def _apply_effect(self, audio, sr, operation):
         effect_type = operation['type']
