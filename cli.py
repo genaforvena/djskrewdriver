@@ -106,7 +106,7 @@ def main():
     if commands:
         print(f"Processing commands: {commands}")
         audio_manager.process_instructions(commands)
-        audio_manager.save_current_state()
+        audio_manager._save_current_state()
         print("\nProcessing complete. File saved.")
         audio_manager.cleanup()
         return
